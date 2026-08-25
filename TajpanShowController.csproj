@@ -6,6 +6,28 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <AssemblyName>TajpanShowController.App</AssemblyName>
+    <RootNamespace>TajpanShowController</RootNamespace>
+    <ApplicationIcon />
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <ProjectReference Include="src\TajpanShowController.Core\TajpanShowController.Core.csproj" />
+    <ProjectReference Include="src\TajpanShowController.Infrastructure\TajpanShowController.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="assets\Tajpan_Show_Controller_Final_UI_Spec_v1.0\assets\Tajpan_Logo_Full.png">
+      <Link>Assets\Tajpan_Logo_Full.png</Link>
+    </Resource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="src\**\*.cs" />
+    <Compile Remove="tests\**\*.cs" />
+    <EmbeddedResource Remove="src\**\*;tests\**\*" />
+    <None Remove="src\**\*;tests\**\*" />
+  </ItemGroup>
 
 </Project>

@@ -1,0 +1,18 @@
+using TajpanShowController.Core.Models;
+using TajpanShowController.Infrastructure.Persistence;
+using Xunit;
+
+namespace TajpanShowController.Tests;
+
+public sealed class PersistenceTests : IDisposable
+{
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "TajpanShowController.Tests", Guid.NewGuid().ToString("N"));
+    [Fact] public async Task SavesAndLoadsPlaylist()
+    {
+        var store = new JsonSettingsStore(_directory); var expected = new AppSettings { Volume = .5f, Playlist = [new PlaylistTrack { FilePath = "x.wav", Title = "X", Duration = TimeSpan.FromSeconds(2) }] };
+        var ct = TestContext.Current.CancellationToken; await store.SaveAsync(expected, ct); var loaded = await store.LoadAsync(ct); Assert.Single(loaded.Playlist); Assert.Equal("X", loaded.Playlist[0].Title); Assert.Equal(.5f, loaded.Volume);
+    }
+    [Fact] public async Task MissingFileReturnsDefaults() => Assert.Empty((await new JsonSettingsStore(_directory).LoadAsync(TestContext.Current.CancellationToken)).Playlist);
+    [Fact] public async Task CorruptJsonReturnsDefaults() { var ct = TestContext.Current.CancellationToken; Directory.CreateDirectory(_directory); await File.WriteAllTextAsync(Path.Combine(_directory, "settings.json"), "{broken", ct); Assert.Empty((await new JsonSettingsStore(_directory).LoadAsync(ct)).Playlist); }
+    public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
+}

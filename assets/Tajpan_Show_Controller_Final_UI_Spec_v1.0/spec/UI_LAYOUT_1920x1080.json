@@ -1,0 +1,133 @@
+{
+  "specVersion": "1.0",
+  "applicationName": "Tajpán Show Controller",
+  "platform": "Windows WPF",
+  "authoritativeViewport": {
+    "width": 1920,
+    "height": 1080,
+    "windowsScalePercent": 100
+  },
+  "referenceImage": {
+    "path": "../references/FINAL_UI_REFERENCE.png",
+    "width": 1536,
+    "height": 1024,
+    "role": "sole_visual_source_of_truth"
+  },
+  "logoAsset": {
+    "path": "../assets/Tajpan_Logo_Full.png",
+    "width": 2048,
+    "height": 1195,
+    "preserveAspectRatio": true,
+    "recolor": false
+  },
+  "rootGrid": {
+    "rowsPx": [50, 700, 182, 148],
+    "rowRoles": ["titleBar", "main", "playback", "status"],
+    "mainColumns": [
+      {
+        "role": "sidebar",
+        "widthPx": 330,
+        "minWidthPx": 310,
+        "maxWidthPx": 360
+      },
+      {
+        "role": "playlistContent",
+        "width": "remaining"
+      }
+    ]
+  },
+  "referencePixelRegions": {
+    "titleBar": {"x": 0, "y": 0, "width": 1536, "height": 47},
+    "sidebar": {"x": 0, "y": 47, "width": 328, "height": 665},
+    "playlistContent": {"x": 328, "y": 47, "width": 1208, "height": 665},
+    "playback": {"x": 0, "y": 712, "width": 1536, "height": 173},
+    "status": {"x": 0, "y": 885, "width": 1536, "height": 139}
+  },
+  "targetLayout": {
+    "titleBar": {
+      "heightPx": 50,
+      "logoBoxPx": 27,
+      "leftPaddingPx": 17,
+      "titleGapPx": 10
+    },
+    "sidebar": {
+      "paddingPx": 20,
+      "brandMaxWidthPx": 290,
+      "brandMaxHeightPx": 235,
+      "lcdOuterWidthPx": 280,
+      "lcdOuterHeightPx": 124,
+      "navButtonHeightPx": 48,
+      "navGapPx": 12
+    },
+    "playlistContent": {
+      "paddingLeftPx": 28,
+      "paddingRightPx": 40,
+      "paddingTopPx": 12,
+      "headerHeightPx": 58,
+      "tableHeightPx": 464,
+      "tableRowHeightPx": 57,
+      "tableToDropZoneGapPx": 16,
+      "dropZoneHeightPx": 110
+    },
+    "playback": {
+      "heightPx": 182,
+      "albumPlaceholderPx": 108,
+      "primaryTransportButtonPx": 68,
+      "progressTrackHeightPx": 5
+    },
+    "status": {
+      "heightPx": 148,
+      "groups": [
+        {"role": "output", "weight": 1.04},
+        {"role": "volume", "weight": 0.96},
+        {"role": "remoteConnection", "weight": 1.08},
+        {"role": "remoteSignal", "weight": 0.97},
+        {"role": "systemTime", "weight": 1.08}
+      ]
+    }
+  },
+  "colors": {
+    "window": "#111315",
+    "mainBackground": "#111314",
+    "panel": "#131618",
+    "tableHeader": "#171A1B",
+    "tableRow": "#121617",
+    "border": "#2B3032",
+    "controlFill": "#1B1E20",
+    "primaryText": "#F2F2F2",
+    "secondaryText": "#A5A7A8",
+    "subduedText": "#777B7D",
+    "accentRed": "#F24341",
+    "selectedDarkRed": "#731E1C",
+    "successGreen": "#55D43D",
+    "lcdDarkGreen": "#6D9E2D",
+    "lcdLightGreen": "#8CBE43",
+    "lcdText": "#10130B"
+  },
+  "typography": {
+    "family": "Segoe UI",
+    "windowTitlePx": 16,
+    "sectionHeadingPx": 20,
+    "bodyPx": 16,
+    "secondaryPx": 14,
+    "statusHeadingPx": 13,
+    "trackTitlePx": 24
+  },
+  "dynamicCorrections": {
+    "baudRate": 192000,
+    "legacyBaudRateForbidden": 115200,
+    "systemClock": "live",
+    "debugCountersOnMainScreen": false
+  },
+  "forbiddenElements": [
+    "playbackQueue",
+    "oversizedNowPlayingCard",
+    "remoteDebugLogOnMainScreen",
+    "rxTxCountersOnMainScreen",
+    "albumArtwork",
+    "waveform",
+    "spectrumAnalyzer",
+    "neonBluePrimaryAccent",
+    "extraDashboardCards"
+  ]
+}

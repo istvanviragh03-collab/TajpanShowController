@@ -1,0 +1,13 @@
+Tajpán Show Controller final UI package v1.0
+
+START_HERE_CODEX_UI_SPEC.md
+  Human-readable and Codex-ready implementation contract.
+
+references/FINAL_UI_REFERENCE.png
+  Sole authoritative visual reference: the restored dark Tajpán UI version.
+
+assets/Tajpan_Logo_Full.png
+  Original transparent Tajpán logo asset; preserve aspect ratio and colors.
+
+spec/UI_LAYOUT_1920x1080.json
+  Machine-readable geometry, color, typography, correction, and exclusion data.
