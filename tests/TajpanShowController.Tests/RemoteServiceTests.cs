@@ -150,6 +150,43 @@ public sealed class RemoteServiceTests
     }
 
     [Fact]
+    public async Task PhysicalUsbLatencyWithinResponseBudgetCompletesHandshake()
+    {
+        var transport = new DelayedReadTransport(
+            TimeSpan.FromMilliseconds(30),
+            TimeSpan.FromMilliseconds(30));
+        await using var service = new RemoteControllerService(_ => transport);
+        var ct = TestContext.Current.CancellationToken;
+
+        await service.ConnectAsync("COM12", false, ct);
+        await WaitUntilAsync(() => service.ConnectionState == RemoteConnectionState.Connected, ct);
+
+        Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
+        Assert.Equal("@B00000000", service.LastResponse);
+    }
+
+    [Fact]
+    public async Task PhysicalDisplayLatencyWithinResponseBudgetMaintainsConnection()
+    {
+        var transport = new DelayedReadTransport(
+            TimeSpan.FromMilliseconds(30),
+            TimeSpan.FromMilliseconds(75));
+        await using var service = new RemoteControllerService(_ => transport);
+        service.UpdateDisplay(1, "Hardware test", PlaybackState.Playing, TimeSpan.FromSeconds(12.3));
+        var ct = TestContext.Current.CancellationToken;
+
+        await service.ConnectAsync("COM12", false, ct);
+        await WaitUntilAsync(() => service.ConnectionState == RemoteConnectionState.Connected, ct);
+        await Task.Delay(TimeSpan.FromSeconds(1), ct);
+
+        Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
+        Assert.Contains("@N1", transport.Writes);
+        Assert.Contains("@KHardware test", transport.Writes);
+        Assert.Contains("@PP", transport.Writes);
+        Assert.Contains("@T00:12.3", transport.Writes);
+    }
+
+    [Fact]
     public async Task IdlePollingIsCoalescedToTheInitialTransaction()
     {
         var log = new RemoteDebugLogBuffer();
@@ -369,6 +406,30 @@ public sealed class RemoteServiceTests
         public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken) => _inner.WriteAsync(data, cancellationToken);
         public ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken) => _inner.ReadAsync(buffer, cancellationToken);
         public async ValueTask DisposeAsync() { WasDisposed = true; await _inner.DisposeAsync(); }
+    }
+
+    private sealed class DelayedReadTransport(TimeSpan pollReadDelay, TimeSpan displayReadDelay) : ISerialTransport
+    {
+        private readonly SimulatedRemoteTransport _inner = new();
+        private TimeSpan _nextReadDelay;
+        public bool IsOpen => _inner.IsOpen;
+        public IEnumerable<string> Writes => _inner.Writes;
+        public Task OpenAsync(string portName, CancellationToken cancellationToken) => _inner.OpenAsync(portName, cancellationToken);
+        public Task CloseAsync(CancellationToken cancellationToken) => _inner.CloseAsync(cancellationToken);
+        public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+        {
+            var frame = System.Text.Encoding.ASCII.GetString(data.Span).TrimEnd('\r', '\n');
+            if (frame == "@S") _nextReadDelay = pollReadDelay;
+            else if (frame.StartsWith("@T") || frame.StartsWith("@N") || frame.StartsWith("@K") || frame.StartsWith("@P"))
+                _nextReadDelay = displayReadDelay;
+            return _inner.WriteAsync(data, cancellationToken);
+        }
+        public async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
+        {
+            await Task.Delay(_nextReadDelay, cancellationToken);
+            return await _inner.ReadAsync(buffer, cancellationToken);
+        }
+        public ValueTask DisposeAsync() => _inner.DisposeAsync();
     }
 
     private sealed class StubbornReadTransport : ISerialTransport

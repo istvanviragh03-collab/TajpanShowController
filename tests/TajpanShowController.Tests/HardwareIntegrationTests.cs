@@ -1,4 +1,6 @@
+using TajpanShowController.Core.Diagnostics;
 using TajpanShowController.Core.Interfaces;
+using TajpanShowController.Core.Models;
 using TajpanShowController.Infrastructure.Serial;
 using Xunit;
 
@@ -31,6 +33,33 @@ public sealed class HardwareIntegrationTests
 
         Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
         Assert.Equal("@B00000000", handshakeResponse);
+    }
+
+    [Fact]
+    public async Task ConfiguredComPortMaintainsConnectionWhileSynchronizingDisplay()
+    {
+        var port = Environment.GetEnvironmentVariable("TAJPAN_HARDWARE_COM");
+        if (string.IsNullOrWhiteSpace(port))
+        {
+            Assert.Skip("Set TAJPAN_HARDWARE_COM to run the physical remote display-sync test.");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        await using var service = new RemoteControllerService(_ => new SerialPortTransport());
+        service.UpdateDisplay(1, "Hardware test", PlaybackState.Playing, TimeSpan.FromSeconds(12.3));
+        await service.ConnectAsync(port, false, ct);
+
+        var deadline = DateTime.UtcNow.AddSeconds(4);
+        while (DateTime.UtcNow < deadline && service.ConnectionState == RemoteConnectionState.Connecting)
+            await Task.Delay(25, ct);
+        await Task.Delay(TimeSpan.FromSeconds(2), ct);
+
+        Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
+        Assert.NotNull(service.TimeSinceLastValidResponse);
+        Assert.True(service.TimeSinceLastValidResponse < TimeSpan.FromMilliseconds(250));
+        Assert.DoesNotContain(service.DebugLog.Drain(1000),
+            entry => entry.Kind is RemoteDebugLogKind.Warning or RemoteDebugLogKind.Error);
     }
 
     [Fact]

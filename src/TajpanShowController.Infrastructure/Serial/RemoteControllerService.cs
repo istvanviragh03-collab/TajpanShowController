@@ -32,7 +32,11 @@ public sealed class RemoteControllerService : IRemoteControllerService
 
     public const int MaxAttempts = 3;
     public static readonly TimeSpan PollPeriod = TimeSpan.FromMilliseconds(10);
-    public static readonly TimeSpan ResponseTimeout = TimeSpan.FromMilliseconds(8);
+    // The physical Leonardo answers polls in roughly 20-32 ms. Its first display
+    // ACK after a poll can take about 75 ms, so keep separate response budgets.
+    public static readonly TimeSpan PollResponseTimeout = TimeSpan.FromMilliseconds(50);
+    public static readonly TimeSpan DisplayResponseTimeout = TimeSpan.FromMilliseconds(100);
+    public static readonly TimeSpan SimulationResponseTimeout = TimeSpan.FromMilliseconds(8);
     public RemoteCommunicationMetrics TimingMetrics { get; } = new();
     public RemoteConnectionState ConnectionState { get; private set; }
     public string LastResponse { get; private set; } = "—";
@@ -73,7 +77,11 @@ public sealed class RemoteControllerService : IRemoteControllerService
             _controlFailures = 0;
             _workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var generation = Interlocked.Increment(ref _connectionGeneration);
-            _worker = Task.Run(() => RunAsync(transport, new StreamingProtocolParser(), generation, _workerCts.Token));
+            var pollResponseTimeout = simulation ? SimulationResponseTimeout : PollResponseTimeout;
+            var displayResponseTimeout = simulation ? SimulationResponseTimeout : DisplayResponseTimeout;
+            _worker = Task.Run(() => RunAsync(
+                transport, new StreamingProtocolParser(), generation,
+                pollResponseTimeout, displayResponseTimeout, _workerCts.Token));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -127,6 +135,8 @@ public sealed class RemoteControllerService : IRemoteControllerService
         ISerialTransport transport,
         StreamingProtocolParser parser,
         int generation,
+        TimeSpan pollResponseTimeout,
+        TimeSpan displayResponseTimeout,
         CancellationToken token)
     {
         var clock = Stopwatch.StartNew();
@@ -139,10 +149,10 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 if (wait > TimeSpan.Zero) await Task.Delay(wait, token).ConfigureAwait(false);
                 else TimingMetrics.RecordScheduleDelay(-wait);
                 nextPoll += PollPeriod;
-                await PollOnceAsync(transport, parser, generation, token).ConfigureAwait(false);
+                await PollOnceAsync(transport, parser, generation, pollResponseTimeout, token).ConfigureAwait(false);
                 if (token.IsCancellationRequested || !IsCurrentGeneration(generation)) return;
                 if (ConnectionState is RemoteConnectionState.Fault or RemoteConnectionState.Disconnected) break;
-                await SendOnePendingDisplayAsync(transport, parser, generation, token).ConfigureAwait(false);
+                await SendOnePendingDisplayAsync(transport, parser, generation, displayResponseTimeout, token).ConfigureAwait(false);
                 if (clock.Elapsed > nextPoll + PollPeriod) nextPoll = clock.Elapsed;
             }
         }
@@ -165,11 +175,12 @@ public sealed class RemoteControllerService : IRemoteControllerService
         ISerialTransport transport,
         StreamingProtocolParser parser,
         int generation,
+        TimeSpan responseTimeout,
         CancellationToken token)
     {
         var pollTx = await WriteFrameAsync(transport, ProtocolCodec.Poll(), token, publishImmediately: false).ConfigureAwait(false);
         var pollSentTimestamp = Stopwatch.GetTimestamp();
-        var read = await ReadFrameAsync(transport, parser, ProtocolFrameKind.Buttons, ResponseTimeout, token).ConfigureAwait(false);
+        var read = await ReadFrameAsync(transport, parser, ProtocolFrameKind.Buttons, responseTimeout, token).ConfigureAwait(false);
         var responseFinishedTimestamp = Stopwatch.GetTimestamp();
         if (!IsCurrentGeneration(generation)) return;
         if (read?.Selected.Kind == ProtocolFrameKind.Buttons)
@@ -192,7 +203,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 ackSentTimestamp,
                 ackSentTimestamp,
                 timedOut: false,
-                ResponseTimeout);
+                responseTimeout);
             SetConnectionState(RemoteConnectionState.Connected, generation);
 
             if (changed || hasUnexpectedFrames)
@@ -225,7 +236,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
             0,
             responseFinishedTimestamp,
             timedOut: read is null,
-            ResponseTimeout);
+            responseTimeout);
         var failedEntries = new List<RemoteDebugLogEntry> { pollTx };
         if (read is null)
         {
@@ -248,6 +259,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
         ISerialTransport transport,
         StreamingProtocolParser parser,
         int generation,
+        TimeSpan responseTimeout,
         CancellationToken token)
     {
         DisplaySnapshot wanted, sent;
@@ -264,7 +276,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 _ => null
             };
             if (command is null) continue;
-            if (await SendDisplayWithRetryAsync(transport, parser, command, token).ConfigureAwait(false))
+            if (await SendDisplayWithRetryAsync(transport, parser, command, responseTimeout, token).ConfigureAwait(false))
             {
                 if (!IsCurrentGeneration(generation)) return;
                 lock (_displayGate)
@@ -286,13 +298,14 @@ public sealed class RemoteControllerService : IRemoteControllerService
         ISerialTransport transport,
         StreamingProtocolParser parser,
         byte[] command,
+        TimeSpan responseTimeout,
         CancellationToken token)
     {
         var commandText = FrameText(command);
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
             await WriteFrameAsync(transport, command, token).ConfigureAwait(false);
-            var read = await ReadFrameAsync(transport, parser, ProtocolFrameKind.Ack, ResponseTimeout, token).ConfigureAwait(false);
+            var read = await ReadFrameAsync(transport, parser, ProtocolFrameKind.Ack, responseTimeout, token).ConfigureAwait(false);
             if (read is null)
             {
                 _debugLog.Write(RemoteDebugLogKind.Warning, $"Timeout waiting for ACK to {commandText}");
