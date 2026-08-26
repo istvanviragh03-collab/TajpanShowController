@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using TajpanShowController.Core.Models;
+using TajpanShowController.Core.Services;
 
 namespace TajpanShowController.Core.Protocol;
 
@@ -14,11 +15,7 @@ public static class ProtocolCodec
         string.Concat(s.Start?'1':'0', s.Stop?'1':'0', s.Pause?'1':'0', s.Previous?'1':'0',
             s.Next?'1':'0', s.Reserved1?'1':'0', s.Reserved2?'1':'0', s.Reserved3?'1':'0'));
     public static byte[] Timecode(TimeSpan value)
-    {
-        var totalMinutes = Math.Clamp((int)value.TotalMinutes, 0, 99);
-        var tenths = Math.Clamp(value.Milliseconds / 100, 0, 9);
-        return Bytes($"@T{totalMinutes:00}:{value.Seconds:00}.{tenths}");
-    }
+        => Bytes("@T" + PlaybackTimeFormatter.Format(value));
     public static byte[] TrackNumber(int number) => number < 0
         ? throw new ArgumentOutOfRangeException(nameof(number)) : Bytes("@N" + number.ToString(CultureInfo.InvariantCulture));
     public static byte[] TrackName(string name) => Bytes("@K" + SanitizeTrackName(name));

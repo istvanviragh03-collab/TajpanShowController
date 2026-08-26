@@ -22,10 +22,13 @@ public sealed class SimulatedRemoteTransport : ISerialTransport
         var line = System.Text.Encoding.ASCII.GetString(data.Span).TrimEnd('\r','\n');
         Writes.Enqueue(line);
         byte[]? response = null;
-        if (line == "@S") response = SendMalformedNext ? ProtocolCodec.Bytes("bad") : ProtocolCodec.Bytes("@B" + ButtonBits);
+        if (line == "@S")
+        {
+            response = SendMalformedNext ? ProtocolCodec.Bytes("bad") : ProtocolCodec.Bytes("@B" + ButtonBits);
+            SendMalformedNext = false;
+        }
         else if (line.StartsWith("@T") || line.StartsWith("@N") || line.StartsWith("@K") || line.StartsWith("@P"))
             response = NackDisplayCommands ? ProtocolCodec.Nack() : ProtocolCodec.Ack();
-        SendMalformedNext = false;
         if (response is not null) foreach (var b in response) _responses.Writer.TryWrite(b);
         return ValueTask.CompletedTask;
     }

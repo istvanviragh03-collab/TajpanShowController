@@ -51,6 +51,13 @@ public sealed class PlaybackTransportController
         if (selected is null)
             return;
 
+        if (IsLoaded(selected))
+        {
+            _playback.Play();
+            _setPlayingTrack(selected);
+            return;
+        }
+
         await _playback.LoadAsync(selected.FilePath, PlaybackState.Playing, cancellationToken);
         _setPlayingTrack(selected);
     }
@@ -62,6 +69,22 @@ public sealed class PlaybackTransportController
     }
 
     public void Stop() => _playback.Stop();
+
+    public async Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default)
+    {
+        var state = _playback.State;
+        var track = state == PlaybackState.Stopped ? _getSelectedTrack() : _getPlayingTrack();
+        if (track is null)
+            return;
+
+        if (!IsLoaded(track))
+        {
+            await _playback.LoadAsync(track.FilePath, state, cancellationToken);
+            _setPlayingTrack(track);
+        }
+
+        _playback.Seek(position);
+    }
 
     public async Task NextAsync(TransportCommandSource source, CancellationToken cancellationToken = default)
     {
@@ -139,4 +162,11 @@ public sealed class PlaybackTransportController
 
         return SelectedIndex();
     }
+
+    private bool IsLoaded(PlaylistTrack track) =>
+        !string.IsNullOrWhiteSpace(_playback.LoadedFilePath) &&
+        string.Equals(
+            Path.GetFullPath(_playback.LoadedFilePath),
+            Path.GetFullPath(track.FilePath),
+            StringComparison.OrdinalIgnoreCase);
 }

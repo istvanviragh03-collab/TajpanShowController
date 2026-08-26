@@ -1,14 +1,61 @@
 using TajpanShowController.Core.Diagnostics;
 using TajpanShowController.Core.Interfaces;
 using TajpanShowController.Core.Models;
+using TajpanShowController.Core.Protocol;
 using TajpanShowController.Core.Services;
 using TajpanShowController.Infrastructure.Serial;
+using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Xunit;
 
 namespace TajpanShowController.Tests;
 
 public sealed class RemoteServiceTests
 {
+    [Fact]
+    public async Task FiftyBlockingFirstUseCommandsAndDebugFloodDoNotInterruptPolling()
+    {
+        var transport = new AlternatingButtonTransport();
+        var log = new RemoteDebugLogBuffer();
+        await using var service = new RemoteControllerService(_ => transport, log);
+        var handled = 0;
+        var falseDisconnects = 0;
+        var wasConnected = false;
+        service.StatusChanged += (_, _) =>
+        {
+            if (service.ConnectionState == RemoteConnectionState.Connected) wasConnected = true;
+            else if (wasConnected) Interlocked.Increment(ref falseDisconnects);
+        };
+        service.ButtonPressed += (_, button) =>
+        {
+            if (button != RemoteButton.Start) return;
+            Thread.Sleep(20); // Represents a slow first-use file/decoder/audio initialization.
+            Interlocked.Increment(ref handled);
+        };
+
+        var ct = TestContext.Current.CancellationToken;
+        await service.ConnectAsync("SIM", true, ct);
+        var debugFlood = Task.Run(() =>
+        {
+            for (var i = 0; i < 50_000; i++)
+            {
+                log.Write(RemoteDebugLogKind.Event, "stress " + i);
+                if ((i & 127) == 0) log.Drain(250);
+            }
+        }, ct);
+
+        await WaitUntilAsync(() => Volatile.Read(ref handled) >= 50, ct);
+        await debugFlood;
+        var timing = service.TimingMetrics.Snapshot();
+
+        Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
+        Assert.Equal(0, Volatile.Read(ref falseDisconnects));
+        Assert.Equal(0, timing.TimeoutCount);
+        Assert.True(timing.PollCount >= 100);
+        Assert.True(transport.AckCount >= 100);
+        Console.WriteLine($"50 first-use commands: polls={timing.PollCount}, avg RTT={timing.AveragePollRtt.TotalMilliseconds:F3} ms, max RTT={timing.MaxPollRtt.TotalMilliseconds:F3} ms, RX->parse max={timing.MaxReceiveToParse.TotalMilliseconds:F3} ms, parse->ACK max={timing.MaxParseToAck.TotalMilliseconds:F3} ms, false disconnects={falseDisconnects}");
+    }
+
     [Fact] public async Task SimulatorUsesSameProtocolAndEdgeDetection()
     {
         var sim = new SimulatedRemoteTransport(); await using var service = new RemoteControllerService(_ => sim);
@@ -339,5 +386,36 @@ public sealed class RemoteServiceTests
         }
         public void Release(string response) => _read.TrySetResult(System.Text.Encoding.ASCII.GetBytes(response));
         public ValueTask DisposeAsync() { IsOpen = false; return ValueTask.CompletedTask; }
+    }
+
+    private sealed class AlternatingButtonTransport : ISerialTransport
+    {
+        private readonly Channel<byte> _responses = Channel.CreateUnbounded<byte>();
+        private int _polls;
+        public bool IsOpen { get; private set; }
+        public int AckCount { get; private set; }
+        public Task OpenAsync(string portName, CancellationToken cancellationToken) { IsOpen = true; return Task.CompletedTask; }
+        public Task CloseAsync(CancellationToken cancellationToken) { IsOpen = false; return Task.CompletedTask; }
+        public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+        {
+            var frame = System.Text.Encoding.ASCII.GetString(data.Span).TrimEnd('\r', '\n');
+            if (frame == "@S")
+            {
+                var pressed = Interlocked.Increment(ref _polls) % 2 == 0;
+                foreach (var value in ProtocolCodec.Bytes(pressed ? "@B10000000" : "@B00000000"))
+                    _responses.Writer.TryWrite(value);
+            }
+            else if (frame == "@A") AckCount++;
+            return ValueTask.CompletedTask;
+        }
+        public async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
+        {
+            var first = await _responses.Reader.ReadAsync(cancellationToken);
+            buffer.Span[0] = first;
+            var count = 1;
+            while (count < buffer.Length && _responses.Reader.TryRead(out var value)) buffer.Span[count++] = value;
+            return count;
+        }
+        public ValueTask DisposeAsync() { IsOpen = false; _responses.Writer.TryComplete(); return ValueTask.CompletedTask; }
     }
 }

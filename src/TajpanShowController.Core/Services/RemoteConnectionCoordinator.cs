@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using TajpanShowController.Core.Diagnostics;
 using TajpanShowController.Core.Interfaces;
 
@@ -117,8 +118,8 @@ public sealed class RemoteConnectionCoordinator : IAsyncDisposable
             }
 
             await _remote.ConnectAsync(options.EffectivePortName, options.Simulation, token);
-            var deadline = DateTime.UtcNow + _connectAttemptTimeout;
-            while (_remote.ConnectionState == RemoteConnectionState.Connecting && DateTime.UtcNow < deadline)
+            var attemptClock = Stopwatch.StartNew();
+            while (_remote.ConnectionState == RemoteConnectionState.Connecting && attemptClock.Elapsed < _connectAttemptTimeout)
                 await Task.Delay(TimeSpan.FromMilliseconds(10), token);
 
             if (_remote.ConnectionState == RemoteConnectionState.Connecting)

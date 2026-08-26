@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
@@ -23,6 +24,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SeekSlider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(SeekSlider_DragStarted));
+        SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(SeekSlider_DragCompleted));
         ViewModel.DiagnosticsFlushed += ViewModel_DiagnosticsFlushed;
     }
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await ViewModel.InitializeAsync();
@@ -53,6 +56,17 @@ public partial class MainWindow : Window
     private void Window_DragOver(object sender, DragEventArgs e) => e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
     private async void Window_Drop(object sender, DragEventArgs e) { if (e.Data.GetData(DataFormats.FileDrop) is string[] files) await ViewModel.AddFilesAsync(files); }
     private void PlaylistGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) { if (ViewModel.SelectedTrack is not null) ViewModel.PlayCommand.Execute(null); }
+
+    private async void SeekSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!SeekSlider.IsEnabled || SeekSlider.ActualWidth <= 0 || FindAncestor<Thumb>(e.OriginalSource as DependencyObject) is not null) return;
+        e.Handled = true;
+        var fraction = Math.Clamp(e.GetPosition(SeekSlider).X / SeekSlider.ActualWidth, 0, 1);
+        await ViewModel.SeekToFractionAsync(fraction);
+    }
+
+    private void SeekSlider_DragStarted(object sender, DragStartedEventArgs e) => ViewModel.BeginSeek();
+    private async void SeekSlider_DragCompleted(object sender, DragCompletedEventArgs e) => await ViewModel.CompleteSeekAsync();
 
     private async void NewPlaylist_Click(object sender, RoutedEventArgs e)
     {
