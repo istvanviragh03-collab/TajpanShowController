@@ -18,6 +18,11 @@ public sealed class HardwareIntegrationTests
 
         var ct = TestContext.Current.CancellationToken;
         await using var service = new RemoteControllerService(_ => new SerialPortTransport());
+        string? handshakeResponse = null;
+        service.StatusChanged += (_, _) =>
+        {
+            if (service.ConnectionState == RemoteConnectionState.Connected) handshakeResponse ??= service.LastResponse;
+        };
         await service.ConnectAsync(port, false, ct);
 
         var deadline = DateTime.UtcNow.AddSeconds(4);
@@ -25,6 +30,38 @@ public sealed class HardwareIntegrationTests
             await Task.Delay(25, ct);
 
         Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
-        Assert.Equal("@B00000000", service.LastResponse);
+        Assert.Equal("@B00000000", handshakeResponse);
+    }
+
+    [Fact]
+    public async Task RapidCanceledConnectDisconnectCyclesRecoverOnConfiguredComPort()
+    {
+        var port = Environment.GetEnvironmentVariable("TAJPAN_HARDWARE_COM");
+        if (string.IsNullOrWhiteSpace(port))
+        {
+            Assert.Skip("Set TAJPAN_HARDWARE_COM to run the physical remote stress test.");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        await using var service = new RemoteControllerService(_ => new SerialPortTransport());
+        await using var coordinator = new TajpanShowController.Core.Services.RemoteConnectionCoordinator(
+            service,
+            () => new TajpanShowController.Core.Services.RemoteConnectionOptions(port, false),
+            () => { },
+            reconnectInterval: TimeSpan.FromMilliseconds(50),
+            connectAttemptTimeout: TimeSpan.FromSeconds(2));
+        coordinator.SetAutoReconnect(false);
+
+        for (var i = 0; i < 8; i++)
+        {
+            var connect = coordinator.ManualConnectAsync(ct);
+            await Task.Delay(1, ct);
+            await coordinator.ManualDisconnectAsync(ct);
+            await connect;
+        }
+
+        Assert.True(await coordinator.ManualConnectAsync(ct));
+        Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
     }
 }

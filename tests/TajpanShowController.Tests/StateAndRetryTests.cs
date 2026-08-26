@@ -11,6 +11,11 @@ public sealed class StateAndRetryTests
         var d = new RemoteButtonEdgeDetector(); var pressed = new RemoteButtonState(true,false,false,false,false,false,false,false); var released = default(RemoteButtonState);
         Assert.Equal([RemoteButton.Start], d.Update(pressed)); Assert.Empty(d.Update(pressed)); Assert.Empty(d.Update(released)); Assert.Equal([RemoteButton.Start], d.Update(pressed));
     }
+    [Fact] public void SynchronizedHeldButtonDoesNotRaiseUntilARealNewEdge()
+    {
+        var d = new RemoteButtonEdgeDetector(); var pressed = new RemoteButtonState(true,false,false,false,false,false,false,false); var released = default(RemoteButtonState);
+        d.Synchronize(pressed); Assert.Empty(d.Update(pressed)); Assert.Empty(d.Update(released)); Assert.Equal([RemoteButton.Start], d.Update(pressed));
+    }
     [Theory]
     [InlineData(PlaybackState.Playing)]
     [InlineData(PlaybackState.Paused)]

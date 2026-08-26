@@ -22,11 +22,13 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private readonly PlaybackTransportController _transport;
     private readonly ISettingsStore _settings;
     private readonly RemoteControllerService _remote;
-    private readonly SimulatedRemoteTransport _simulator = new();
+    private readonly RemoteConnectionCoordinator _connectionCoordinator;
+    private SimulatedRemoteTransport _simulator = new();
     private readonly RemoteDebugLogBuffer _debugLog = new();
     private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _playingBlink = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _debugUiTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly PlaylistChangeTracker _playlistChanges = new();
     private AppSettings _loadedSettings = new();
     private PlaybackState _lastLoggedPlaybackState = PlaybackState.Stopped;
@@ -50,6 +52,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     [ObservableProperty] private bool isConnected;
     [ObservableProperty] private bool isSimulation;
     [ObservableProperty] private string? selectedPort;
+    [ObservableProperty] private bool autoConnect = true;
+    [ObservableProperty] private bool autoReconnect = true;
     [ObservableProperty] private string statusMessage = "Készen áll";
     [ObservableProperty] private bool settingsVisible;
     [ObservableProperty] private bool playingIndicatorVisible;
@@ -89,7 +93,12 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     {
         var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TajpanShowController");
         _settings = new JsonSettingsStore(appData);
-        _remote = new RemoteControllerService(sim => sim ? _simulator : new SerialPortTransport(), _debugLog);
+        _remote = new RemoteControllerService(CreateRemoteTransport, _debugLog);
+        _connectionCoordinator = new RemoteConnectionCoordinator(
+            _remote,
+            () => new RemoteConnectionOptions(SelectedPort, IsSimulation),
+            () => OnUi(UpdateRemoteDisplay),
+            _debugLog);
         _transport = new PlaybackTransportController(_playback, Playlist, () => SelectedTrack, track => SelectedTrack = track, () => PlayingTrack, track => PlayingTrack = track);
         PlayCommand = new AsyncRelayCommand(() => ExecuteTransportAsync(_transport.PlayAsync));
         StopCommand = new RelayCommand(Stop);
@@ -123,6 +132,8 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     {
         _isInitializing = true;
         _loadedSettings = await _settings.LoadAsync();
+        AutoConnect = _loadedSettings.AutoConnect;
+        AutoReconnect = _loadedSettings.AutoReconnect;
         PlaylistName = string.IsNullOrWhiteSpace(_loadedSettings.PlaylistName) ? "Untitled Show" : _loadedSettings.PlaylistName;
         foreach (var track in _loadedSettings.Playlist.Where(t => !string.IsNullOrWhiteSpace(t.FilePath))) Playlist.Add(track);
         Volume = Math.Clamp(_loadedSettings.Volume * 100, 0, 100); _playback.Volume = (float)(Volume / 100);
@@ -132,14 +143,21 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         SelectedTrack = Playlist.FirstOrDefault(); RaiseTrackProperties();
         SetPlaylistModified(false);
         _isInitializing = false;
+        _connectionCoordinator.SetAutoReconnect(AutoReconnect);
+        UpdateRemoteDisplay();
         UpdateRemoteStatus();
+        await _connectionCoordinator.StartAsync(AutoConnect);
     }
 
     partial void OnSelectedTrackChanged(PlaylistTrack? value) { RaiseTrackProperties(); if (_playback.State == PlaybackState.Stopped) UpdateRemoteDisplay(); }
     partial void OnPlayingTrackChanged(PlaylistTrack? value) => RaiseTrackProperties();
     partial void OnVolumeChanged(double value) { _playback.Volume = (float)Math.Clamp(value / 100, 0, 1); OnPropertyChanged(nameof(VolumePercent)); }
-    partial void OnSelectedAudioDeviceChanged(AudioOutputDevice? value) { _playback.OutputDeviceNumber = value?.DeviceNumber ?? -1; OnPropertyChanged(nameof(AudioStatusLabel)); OnPropertyChanged(nameof(AudioStatusColor)); _ = SaveAsync(); }
+    partial void OnSelectedAudioDeviceChanged(AudioOutputDevice? value) { _playback.OutputDeviceNumber = value?.DeviceNumber ?? -1; OnPropertyChanged(nameof(AudioStatusLabel)); OnPropertyChanged(nameof(AudioStatusColor)); if (!_isInitializing) _ = SaveAsync(); }
     partial void OnPlaylistNameChanged(string value) { if (_isInitializing) return; SetPlaylistModified(true); _ = SaveAsync(); }
+    partial void OnSelectedPortChanged(string? value) { if (!_isInitializing) _ = SaveAsync(); UpdateRemoteStatus(); }
+    partial void OnIsSimulationChanged(bool value) => UpdateRemoteStatus();
+    partial void OnAutoConnectChanged(bool value) { if (!_isInitializing) _ = SaveAsync(); }
+    partial void OnAutoReconnectChanged(bool value) { if (_isInitializing) return; _connectionCoordinator.SetAutoReconnect(value); _ = SaveAsync(); }
 
     public void SetPlaylistNameFromStorage(string value) { _isInitializing = true; PlaylistName = value; _isInitializing = false; SetPlaylistModified(false); _ = SaveAsync(); }
     public void MarkPlaylistSaved() => SetPlaylistModified(false);
@@ -155,7 +173,15 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         SelectedTrack ??= Playlist.FirstOrDefault(); SetPlaylistModified(true); await SaveAsync(); RaiseTrackProperties();
     }
     public async Task ClearAsync() { Stop(); Playlist.Clear(); SelectedTrack = null; PlayingTrack = null; SetPlaylistModified(true); await SaveAsync(); RaiseTrackProperties(); }
-    public void RefreshPorts() { var selected = SelectedPort; Ports.Clear(); foreach (var port in SerialPort.GetPortNames().OrderBy(x => x)) Ports.Add(port); if (selected is not null && Ports.Contains(selected)) SelectedPort = selected; else SelectedPort = Ports.FirstOrDefault(); }
+    public void RefreshPorts()
+    {
+        var selected = SelectedPort;
+        var ports = SerialPort.GetPortNames().ToList();
+        if (!string.IsNullOrWhiteSpace(selected) && !ports.Contains(selected, StringComparer.OrdinalIgnoreCase)) ports.Add(selected);
+        Ports.Clear();
+        foreach (var port in ports.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)) Ports.Add(port);
+        SelectedPort = selected;
+    }
     public async Task SimulateButtonAsync(string bits)
     {
         if (!IsSimulation || !IsConnected) { StatusMessage = "Előbb csatlakozz szimulációs módban."; return; }
@@ -177,11 +203,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private async Task ConnectAsync()
     {
         if (!IsSimulation && string.IsNullOrWhiteSpace(SelectedPort)) { StatusMessage = "Válassz COM-portot."; return; }
-        if (IsSimulation) { _simulator.DropResponses = false; _simulator.NackDisplayCommands = false; _simulator.SendMalformedNext = false; _simulator.ButtonBits = "00000000"; }
-        try { await _remote.ConnectAsync(SelectedPort ?? "SIM", IsSimulation); _loadedSettings.LastComPort = SelectedPort; await SaveAsync(); UpdateRemoteDisplay(); }
-        catch (Exception ex) { StatusMessage = "Kapcsolódási hiba: " + ex.Message; }
+        await SaveAsync();
+        var connected = await _connectionCoordinator.ManualConnectAsync();
+        if (!connected) StatusMessage = "Kapcsolódási hiba: " + _remote.LastResponse;
     }
-    private Task DisconnectAsync() => _remote.DisconnectAsync();
+    private Task DisconnectAsync() => _connectionCoordinator.ManualDisconnectAsync();
+    private ISerialTransport CreateRemoteTransport(bool simulation)
+    {
+        if (!simulation) return new SerialPortTransport();
+        _simulator = new SimulatedRemoteTransport();
+        return _simulator;
+    }
     private void RemoteButtonPressed(object? sender, RemoteButton button) => OnUi(() =>
     {
         switch (button)
@@ -209,7 +241,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     });
     private void PlaybackPositionChanged(object? sender, EventArgs e) => OnUi(() => { CurrentTime = Format(_playback.Position); TotalTime = Format(_playback.Duration); Progress = _playback.Duration.TotalMilliseconds <= 0 ? 0 : _playback.Position.TotalMilliseconds / _playback.Duration.TotalMilliseconds * 100; OnPropertyChanged(nameof(LcdLine2)); UpdateRemoteDisplay(); });
     private void UpdateRemoteDisplay() { var track = DisplayedTrack; _remote.UpdateDisplay(track is null ? 0 : Playlist.IndexOf(track) + 1, track is null ? "" : Path.GetFileNameWithoutExtension(track.FilePath), _playback.State, _playback.Position); }
-    private void UpdateRemoteStatus() { IsConnected = _remote.ConnectionState == RemoteConnectionState.Connected; var status = RemoteStatusPresentation.From(_remote.ConnectionState, _remote.LastResponse); ConnectionLabel = status.Text; RemoteStatusColor = status.Color; RemoteStatusDetail = status.Detail; ConnectionDetail = $"{(IsSimulation ? "SIM" : SelectedPort ?? "—")}   192000 baud"; LastResponse = _remote.LastResponse; }
+    private void UpdateRemoteStatus() { IsConnected = _remote.ConnectionState == RemoteConnectionState.Connected; var status = RemoteStatusPresentation.From(_remote.ConnectionState, _remote.LastResponse); ConnectionLabel = status.Text; RemoteStatusColor = status.Color; RemoteStatusDetail = status.Detail; ConnectionDetail = $"{(IsSimulation ? "SIM" : SelectedPort ?? "—")}   {RemoteSerialDefaults.BaudRate} baud"; LastResponse = _remote.LastResponse; }
     private void FlushDiagnostics()
     {
         var batch = _debugLog.Drain(MaximumDiagnosticBatchSize);
@@ -227,8 +259,14 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private void RaiseTrackProperties() { OnPropertyChanged(nameof(DisplayedTrack)); OnPropertyChanged(nameof(NowPlayingFilename)); OnPropertyChanged(nameof(SelectedTitle)); OnPropertyChanged(nameof(SelectedPosition)); OnPropertyChanged(nameof(LcdLine1)); OnPropertyChanged(nameof(LcdLine2)); }
     private static string Format(TimeSpan time) => $"{Math.Clamp((int)time.TotalMinutes, 0, 99):00}:{time.Seconds:00}";
     private static void OnUi(Action action) { var dispatcher = Application.Current?.Dispatcher; if (dispatcher is null || dispatcher.CheckAccess()) action(); else dispatcher.BeginInvoke(action); }
-    private Task SaveAsync() => _settings.SaveAsync(new AppSettings { PlaylistName = PlaylistName, LastComPort = SelectedPort, Volume = (float)(Volume / 100), AudioOutputDeviceNumber = SelectedAudioDevice?.DeviceNumber ?? -1, AudioOutputDeviceName = SelectedAudioDevice?.Name ?? "Alapértelmezett Windows audio", Playlist = Playlist.ToList() });
-    public async ValueTask DisposeAsync() { _clock.Stop(); _playingBlink.Stop(); _debugUiTimer.Stop(); await SaveAsync(); await _remote.DisposeAsync(); await _playback.DisposeAsync(); }
+    private async Task SaveAsync()
+    {
+        var snapshot = new AppSettings { PlaylistName = PlaylistName, LastComPort = SelectedPort, AutoConnect = AutoConnect, AutoReconnect = AutoReconnect, Volume = (float)(Volume / 100), AudioOutputDeviceNumber = SelectedAudioDevice?.DeviceNumber ?? -1, AudioOutputDeviceName = SelectedAudioDevice?.Name ?? "Alapértelmezett Windows audio", Playlist = Playlist.ToList() };
+        await _saveGate.WaitAsync();
+        try { await _settings.SaveAsync(snapshot); }
+        finally { _saveGate.Release(); }
+    }
+    public async ValueTask DisposeAsync() { _clock.Stop(); _playingBlink.Stop(); _debugUiTimer.Stop(); await _connectionCoordinator.DisposeAsync(); await SaveAsync(); await _remote.DisposeAsync(); await _playback.DisposeAsync(); _saveGate.Dispose(); }
 }
 
 internal static class Protocol

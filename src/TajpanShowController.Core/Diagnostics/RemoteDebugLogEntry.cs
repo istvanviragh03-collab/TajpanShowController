@@ -7,6 +7,7 @@ public enum RemoteDebugLogKind
     Event,
     Playback,
     State,
+    Info,
     Warning,
     Error
 }

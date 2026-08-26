@@ -7,6 +7,9 @@ public enum RemoteButton { Start, Stop, Pause, Previous, Next }
 public sealed class RemoteButtonEdgeDetector
 {
     private RemoteButtonState _previous;
+
+    public void Synchronize(RemoteButtonState current) => _previous = current;
+
     public IReadOnlyList<RemoteButton> Update(RemoteButtonState current)
     {
         var result = new List<RemoteButton>(5);

@@ -77,7 +77,86 @@
       </Grid>
     </Grid>
 
-    <Grid x:Name="SettingsPage" Grid.Row="1" Margin="18,14,18,18" Visibility="Collapsed"><Border Style="{StaticResource Card}" Padding="24"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel MaxWidth="1180" HorizontalAlignment="Stretch"><TextBlock Text="SETTINGS" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,20"/><TextBlock Style="{StaticResource Caption}" Text="AUDIO"/><Grid Margin="0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBlock Text="Output device" Foreground="{DynamicResource SecondaryBrush}"/><ComboBox Grid.Column="1" ItemsSource="{Binding AudioDevices}" SelectedItem="{Binding SelectedAudioDevice}"/><TextBlock Grid.Column="2" Text="AVAILABLE" Foreground="{DynamicResource GreenBrush}" Margin="12,0,0,0"/></Grid><Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/><TextBlock Style="{StaticResource Caption}" Text="REMOTE / RS-485"/><Grid Margin="0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBlock Text="COM Port" Foreground="{DynamicResource SecondaryBrush}"/><ComboBox Grid.Column="1" ItemsSource="{Binding Ports}" SelectedItem="{Binding SelectedPort}"/><TextBlock Grid.Column="2" Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" Margin="12,0,0,0" TextTrimming="CharacterEllipsis"/></Grid><Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions><TextBlock Text="Baud rate" Foreground="{DynamicResource SecondaryBrush}"/><TextBlock Grid.Column="1" Text="192000 8N1" Background="#0B0F13" Padding="8"/><Button Grid.Column="2" Content="Refresh" Click="RefreshPorts_Click" Margin="12,0,0,0"/></Grid><Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Status detail" Foreground="{DynamicResource SecondaryBrush}"/><TextBlock Grid.Column="1" Text="{Binding RemoteStatusDetail}" Foreground="{Binding RemoteStatusColor}" TextTrimming="CharacterEllipsis"/></Grid><StackPanel Orientation="Horizontal" Margin="180,14,0,0"><Button Content="Connect" Command="{Binding ConnectCommand}"/><Button Content="Disconnect" Command="{Binding DisconnectCommand}" Margin="6,0"/><CheckBox Content="Simulation" IsChecked="{Binding IsSimulation}" VerticalAlignment="Center" Margin="12,0"/></StackPanel><TextBlock Style="{StaticResource Caption}" Text="SIMULATION CONTROLS" Margin="180,16,0,0"/><WrapPanel Margin="180,10,0,0"><Button Content="START" Tag="10000000" Click="SimButton_Click"/><Button Content="STOP" Tag="01000000" Click="SimButton_Click" Margin="5,0"/><Button Content="PAUSE" Tag="00100000" Click="SimButton_Click"/><Button Content="PREV" Tag="00010000" Click="SimButton_Click" Margin="5,0"/><Button Content="NEXT" Tag="00001000" Click="SimButton_Click"/><Button Content="Malformed" Click="Malformed_Click" Margin="12,0,0,0"/><Button Content="NACK" Click="Nack_Click" Margin="5,0"/><Button Content="Connection loss" Click="Loss_Click"/></WrapPanel><Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,20"/><TextBlock Style="{StaticResource Caption}" Text="PLAYBACK"/><Grid Margin="0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/></Grid.ColumnDefinitions><TextBlock Text="Master volume" Foreground="{DynamicResource SecondaryBrush}"/><Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Volume}"/></Grid><Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/><TextBlock Style="{StaticResource Caption}" Text="PLAYLIST"/><Grid Margin="0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="Current playlist" Foreground="{DynamicResource SecondaryBrush}"/><TextBlock Grid.Column="1" Text="{Binding PlaylistName}" TextTrimming="CharacterEllipsis"/></Grid><Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="File" Foreground="{DynamicResource SecondaryBrush}"/><TextBlock Grid.Column="1" Text="{Binding PlaylistPath}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/></Grid><Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/><TextBlock Style="{StaticResource Caption}" Text="APPLICATION"/><TextBlock Text="Settings and playlist state are saved locally for the current Windows user." Foreground="{DynamicResource MutedBrush}" Margin="0,10,0,20"/></StackPanel></ScrollViewer></Border></Grid>
+    <Grid x:Name="SettingsPage" Grid.Row="1" Margin="18,14,18,18" Visibility="Collapsed">
+      <Border Style="{StaticResource Card}" Padding="24">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel MaxWidth="1180" HorizontalAlignment="Stretch">
+            <TextBlock Text="SETTINGS" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="AUDIO"/>
+            <Grid Margin="0,12">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Output device" Foreground="{DynamicResource SecondaryBrush}"/>
+              <ComboBox Grid.Column="1" ItemsSource="{Binding AudioDevices}" SelectedItem="{Binding SelectedAudioDevice}"/>
+              <TextBlock Grid.Column="2" Text="AVAILABLE" Foreground="{DynamicResource GreenBrush}" Margin="12,0,0,0"/>
+            </Grid>
+            <Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="REMOTE / RS-485"/>
+            <Grid Margin="0,12">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+              <TextBlock Text="COM Port" Foreground="{DynamicResource SecondaryBrush}"/>
+              <ComboBox Grid.Column="1" ItemsSource="{Binding Ports}" SelectedItem="{Binding SelectedPort}"/>
+              <TextBlock Grid.Column="2" Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" Margin="12,0,0,0" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+            <Grid Margin="0,5">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Baud rate" Foreground="{DynamicResource SecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="192000 8N1" Background="#0B0F13" Padding="8"/>
+              <Button Grid.Column="2" Content="Refresh" Click="RefreshPorts_Click" Margin="12,0,0,0"/>
+            </Grid>
+            <Grid Margin="0,10,0,0">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="1">
+                <CheckBox Content="Auto Connect on startup" IsChecked="{Binding AutoConnect, Mode=TwoWay}"/>
+                <CheckBox Content="Auto Reconnect on connection loss" IsChecked="{Binding AutoReconnect, Mode=TwoWay}" Margin="0,9,0,0"/>
+              </StackPanel>
+            </Grid>
+            <Grid Margin="0,12,0,5">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Status detail" Foreground="{DynamicResource SecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding RemoteStatusDetail}" Foreground="{Binding RemoteStatusColor}" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+            <StackPanel Orientation="Horizontal" Margin="180,14,0,0">
+              <Button Content="Connect" Command="{Binding ConnectCommand}"/>
+              <Button Content="Disconnect" Command="{Binding DisconnectCommand}" Margin="6,0"/>
+              <CheckBox Content="Simulation" IsChecked="{Binding IsSimulation}" VerticalAlignment="Center" Margin="12,0"/>
+            </StackPanel>
+            <TextBlock Style="{StaticResource Caption}" Text="SIMULATION CONTROLS" Margin="180,16,0,0"/>
+            <WrapPanel Margin="180,10,0,0">
+              <Button Content="START" Tag="10000000" Click="SimButton_Click"/>
+              <Button Content="STOP" Tag="01000000" Click="SimButton_Click" Margin="5,0"/>
+              <Button Content="PAUSE" Tag="00100000" Click="SimButton_Click"/>
+              <Button Content="PREV" Tag="00010000" Click="SimButton_Click" Margin="5,0"/>
+              <Button Content="NEXT" Tag="00001000" Click="SimButton_Click"/>
+              <Button Content="Malformed" Click="Malformed_Click" Margin="12,0,0,0"/>
+              <Button Content="NACK" Click="Nack_Click" Margin="5,0"/>
+              <Button Content="Connection loss" Click="Loss_Click"/>
+            </WrapPanel>
+            <Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="PLAYBACK"/>
+            <Grid Margin="0,12">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Master volume" Foreground="{DynamicResource SecondaryBrush}"/>
+              <Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Volume}"/>
+            </Grid>
+            <Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="PLAYLIST"/>
+            <Grid Margin="0,12">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Current playlist" Foreground="{DynamicResource SecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding PlaylistName}" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+            <Grid Margin="0,5">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <TextBlock Text="File" Foreground="{DynamicResource SecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding PlaylistPath}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+            <Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="APPLICATION"/>
+            <TextBlock Text="Settings and playlist state are saved locally for the current Windows user." Foreground="{DynamicResource MutedBrush}" Margin="0,10,0,20"/>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
 
     <Grid x:Name="DebugPage" Grid.Row="1" Margin="18,14,18,18" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="10"/><RowDefinition/></Grid.RowDefinitions><UniformGrid Rows="1" Columns="6"><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="REMOTE"/><TextBlock Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="PORT"/><TextBlock Text="{Binding SelectedPort}" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="BAUD"/><TextBlock Text="192000" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="LAST RX"/><TextBlock Text="{Binding LastResponse}" FontWeight="Bold" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="TX / RX"/><TextBlock Text="change based" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="LOG LIMIT"/><TextBlock Text="3000 rows" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border></UniformGrid>
       <ListBox x:Name="DebugLogList" Grid.Row="2" ItemsSource="{Binding Diagnostics}" FontFamily="Consolas" FontSize="10" Padding="13" ScrollViewer.ScrollChanged="DebugLog_ScrollChanged" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">

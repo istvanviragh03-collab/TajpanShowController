@@ -11,9 +11,74 @@ public sealed class RemoteServiceTests
 {
     [Fact] public async Task SimulatorUsesSameProtocolAndEdgeDetection()
     {
-        var sim = new SimulatedRemoteTransport { ButtonBits = "10000000" }; await using var service = new RemoteControllerService(_ => sim);
+        var sim = new SimulatedRemoteTransport(); await using var service = new RemoteControllerService(_ => sim);
         var count = 0; service.ButtonPressed += (_, b) => { if (b == RemoteButton.Start) count++; };
-        var ct = TestContext.Current.CancellationToken; await service.ConnectAsync("SIM", true, ct); await Task.Delay(35, ct); await service.DisconnectAsync(ct); Assert.Equal(1, count);
+        var ct = TestContext.Current.CancellationToken; await service.ConnectAsync("SIM", true, ct); await WaitUntilAsync(() => service.ConnectionState == RemoteConnectionState.Connected, ct);
+        sim.ButtonBits = "10000000"; await Task.Delay(35, ct); await service.DisconnectAsync(ct); Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task FirstButtonFrameAfterConnectIsBaselineAndDoesNotRaiseFalseEdge()
+    {
+        var sim = new SimulatedRemoteTransport { ButtonBits = "10000000" };
+        await using var service = new RemoteControllerService(_ => sim);
+        var count = 0;
+        service.ButtonPressed += (_, _) => count++;
+
+        var ct = TestContext.Current.CancellationToken;
+        await service.ConnectAsync("SIM", true, ct);
+        await WaitUntilAsync(() => service.ConnectionState == RemoteConnectionState.Connected, ct);
+        await Task.Delay(25, ct);
+
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task ReconnectResendsCompleteDisplaySnapshotThroughExistingCoalescing()
+    {
+        var first = new SimulatedRemoteTransport();
+        var second = new SimulatedRemoteTransport();
+        var transports = new Queue<SimulatedRemoteTransport>([first, second]);
+        await using var service = new RemoteControllerService(_ => transports.Dequeue());
+        service.UpdateDisplay(7, "Reconnect track", PlaybackState.Playing, TimeSpan.FromSeconds(42.3));
+        var ct = TestContext.Current.CancellationToken;
+
+        await service.ConnectAsync("SIM", true, ct);
+        await Task.Delay(150, ct);
+        await service.DisconnectAsync(ct);
+        await service.ConnectAsync("SIM", true, ct);
+        await Task.Delay(150, ct);
+
+        Assert.Contains("@N7", second.Writes);
+        Assert.Contains("@KReconnect track", second.Writes);
+        Assert.Contains("@PP", second.Writes);
+        Assert.Contains("@T00:42.3", second.Writes);
+    }
+
+    [Fact]
+    public async Task SimulatedConnectionLossAutoReconnectsThroughProductionCoordinator()
+    {
+        var first = new SimulatedRemoteTransport();
+        var second = new SimulatedRemoteTransport();
+        var transports = new Queue<SimulatedRemoteTransport>([first, second]);
+        await using var service = new RemoteControllerService(_ => transports.Dequeue());
+        await using var coordinator = new RemoteConnectionCoordinator(
+            service,
+            () => new RemoteConnectionOptions(null, true),
+            () => service.UpdateDisplay(3, "Simulation reconnect", PlaybackState.Paused, TimeSpan.FromSeconds(9.4)),
+            reconnectInterval: TimeSpan.FromMilliseconds(20),
+            connectAttemptTimeout: TimeSpan.FromMilliseconds(250));
+        coordinator.SetAutoReconnect(true);
+        var ct = TestContext.Current.CancellationToken;
+        Assert.True(await coordinator.StartAsync(autoConnect: true, ct));
+
+        first.DropResponses = true;
+        await WaitUntilAsync(() => transports.Count == 0 && service.ConnectionState == RemoteConnectionState.Connected, ct);
+        await WaitUntilAsync(() => second.Writes.Contains("@N3") && second.Writes.Contains("@KSimulation reconnect") && second.Writes.Contains("@PA"), ct);
+
+        Assert.Contains("@N3", second.Writes);
+        Assert.Contains("@KSimulation reconnect", second.Writes);
+        Assert.Contains("@PA", second.Writes);
     }
     [Fact] public async Task LostConnectionBecomesFaultAfterMaximumFailures()
     {
@@ -156,6 +221,52 @@ public sealed class RemoteServiceTests
     }
 
     [Fact]
+    public async Task CloseFailureStillDisposesOldTransportAndAllowsReconnect()
+    {
+        var log = new RemoteDebugLogBuffer();
+        var failing = new CloseFailingTransport();
+        var recovered = new SimulatedRemoteTransport();
+        var transports = new Queue<ISerialTransport>([failing, recovered]);
+        await using var service = new RemoteControllerService(_ => transports.Dequeue(), log);
+        var ct = TestContext.Current.CancellationToken;
+
+        await service.ConnectAsync("SIM", true, ct);
+        await WaitUntilAsync(() => service.ConnectionState == RemoteConnectionState.Connected, ct);
+        await service.DisconnectAsync(ct);
+
+        Assert.True(failing.WasDisposed);
+        Assert.Equal(RemoteConnectionState.Disconnected, service.ConnectionState);
+        Assert.Contains(DrainAll(log), entry => entry.Kind == RemoteDebugLogKind.Error && entry.Message.Contains("close failed", StringComparison.Ordinal));
+
+        await service.ConnectAsync("SIM", true, ct);
+        await WaitUntilAsync(() => service.ConnectionState == RemoteConnectionState.Connected, ct);
+        Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
+    }
+
+    [Fact]
+    public async Task TimedOutOldWorkerCannotCorruptNewConnectionSession()
+    {
+        var stale = new StubbornReadTransport();
+        var current = new SimulatedRemoteTransport();
+        var transports = new Queue<ISerialTransport>([stale, current]);
+        await using var service = new RemoteControllerService(_ => transports.Dequeue());
+        var buttonEvents = 0;
+        service.ButtonPressed += (_, _) => Interlocked.Increment(ref buttonEvents);
+        var ct = TestContext.Current.CancellationToken;
+
+        await service.ConnectAsync("SIM", true, ct);
+        await service.DisconnectAsync(ct); // Exercises the worker-shutdown timeout path.
+        await service.ConnectAsync("SIM", true, ct);
+        await WaitUntilAsync(() => service.ConnectionState == RemoteConnectionState.Connected, ct);
+
+        stale.Release("@B10000000\r\n");
+        await Task.Delay(50, ct);
+
+        Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
+        Assert.Equal(0, buttonEvents);
+    }
+
+    [Fact]
     public void DebugBufferIsThreadSafeAndBounded()
     {
         var log = new RemoteDebugLogBuffer(50);
@@ -199,5 +310,34 @@ public sealed class RemoteServiceTests
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
         while (!condition() && DateTime.UtcNow < deadline) await Task.Delay(10, cancellationToken);
         Assert.True(condition(), "The expected remote state was not reached within two seconds.");
+    }
+
+    private sealed class CloseFailingTransport : ISerialTransport
+    {
+        private readonly SimulatedRemoteTransport _inner = new();
+        public bool WasDisposed { get; private set; }
+        public bool IsOpen => _inner.IsOpen;
+        public Task OpenAsync(string portName, CancellationToken cancellationToken) => _inner.OpenAsync(portName, cancellationToken);
+        public Task CloseAsync(CancellationToken cancellationToken) => throw new IOException("Injected close failure");
+        public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken) => _inner.WriteAsync(data, cancellationToken);
+        public ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken) => _inner.ReadAsync(buffer, cancellationToken);
+        public async ValueTask DisposeAsync() { WasDisposed = true; await _inner.DisposeAsync(); }
+    }
+
+    private sealed class StubbornReadTransport : ISerialTransport
+    {
+        private readonly TaskCompletionSource<byte[]> _read = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool IsOpen { get; private set; }
+        public Task OpenAsync(string portName, CancellationToken cancellationToken) { IsOpen = true; return Task.CompletedTask; }
+        public Task CloseAsync(CancellationToken cancellationToken) { IsOpen = false; return Task.CompletedTask; }
+        public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
+        {
+            var response = await _read.Task; // Deliberately ignores cancellation to emulate a stuck serial driver read.
+            response.CopyTo(buffer);
+            return response.Length;
+        }
+        public void Release(string response) => _read.TrySetResult(System.Text.Encoding.ASCII.GetBytes(response));
+        public ValueTask DisposeAsync() { IsOpen = false; return ValueTask.CompletedTask; }
     }
 }

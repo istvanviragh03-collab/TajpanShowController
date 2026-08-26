@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using TajpanShowController.Core.Interfaces;
 using TajpanShowController.Core.Protocol;
@@ -12,14 +13,14 @@ public sealed class SimulatedRemoteTransport : ISerialTransport
     public bool DropResponses { get; set; }
     public bool NackDisplayCommands { get; set; }
     public bool SendMalformedNext { get; set; }
-    public List<string> Writes { get; } = [];
+    public ConcurrentQueue<string> Writes { get; } = new();
     public Task OpenAsync(string portName, CancellationToken cancellationToken) { IsOpen = true; return Task.CompletedTask; }
     public Task CloseAsync(CancellationToken cancellationToken) { IsOpen = false; return Task.CompletedTask; }
     public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
     {
         if (!IsOpen || DropResponses) return ValueTask.CompletedTask;
         var line = System.Text.Encoding.ASCII.GetString(data.Span).TrimEnd('\r','\n');
-        Writes.Add(line);
+        Writes.Enqueue(line);
         byte[]? response = null;
         if (line == "@S") response = SendMalformedNext ? ProtocolCodec.Bytes("bad") : ProtocolCodec.Bytes("@B" + ButtonBits);
         else if (line.StartsWith("@T") || line.StartsWith("@N") || line.StartsWith("@K") || line.StartsWith("@P"))
