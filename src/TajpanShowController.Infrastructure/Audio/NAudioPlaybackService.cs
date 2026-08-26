@@ -14,11 +14,13 @@ public sealed class NAudioPlaybackService : IPlaybackService
     private readonly CancellationTokenSource _timerCts = new();
     private float _volume = 0.75f;
     private int _outputDeviceNumber = -1;
+    private string? _loadedFilePath;
     private AppPlaybackState _state;
     private bool _manualStop;
 
     public NAudioPlaybackService() => _ = ReportPositionAsync();
     public AppPlaybackState State => _state;
+    public string? LoadedFilePath { get { lock (_gate) return _loadedFilePath; } }
     public TimeSpan Position { get { lock (_gate) return _reader?.CurrentTime ?? TimeSpan.Zero; } }
     public TimeSpan Duration { get { lock (_gate) return _reader?.TotalTime ?? TimeSpan.Zero; } }
     public float Volume { get => _volume; set { _volume = Math.Clamp(value, 0, 1); lock (_gate) if (_reader is not null) _reader.Volume = _volume; } }
@@ -44,6 +46,7 @@ public sealed class NAudioPlaybackService : IPlaybackService
             try
             {
                 _reader = new AudioFileReader(filePath) { Volume = _volume };
+                _loadedFilePath = Path.GetFullPath(filePath);
                 _output = new WaveOutEvent { DeviceNumber = _outputDeviceNumber };
                 _output.PlaybackStopped += OnPlaybackStopped;
                 _output.Init(_reader);
@@ -59,8 +62,37 @@ public sealed class NAudioPlaybackService : IPlaybackService
     public void Play() { lock (_gate) { if (_output is null) return; _manualStop = false; _output.Play(); SetState(AppPlaybackState.Playing); } }
     public void Pause() { lock (_gate) { if (_output is null || _state != AppPlaybackState.Playing) return; _output.Pause(); SetState(AppPlaybackState.Paused); } }
     public void Resume() { lock (_gate) { if (_output is null || _state != AppPlaybackState.Paused) return; _output.Play(); SetState(AppPlaybackState.Playing); } }
-    public void Stop() { lock (_gate) { if (_output is null) return; _manualStop = true; _output.Stop(); if (_reader is not null) _reader.Position = 0; SetState(AppPlaybackState.Stopped); } }
+    public void Stop()
+    {
+        lock (_gate)
+        {
+            if (_output is null)
+                return;
+            _manualStop = true;
+            _output.Stop();
+            if (_reader is not null)
+                _reader.Position = 0;
+            SetState(AppPlaybackState.Stopped);
+        }
+
+        PositionChanged?.Invoke(this, EventArgs.Empty);
+    }
     public void Restart() { lock (_gate) { if (_output is null || _reader is null) return; _manualStop = false; _reader.Position = 0; _output.Play(); SetState(AppPlaybackState.Playing); PositionChanged?.Invoke(this, EventArgs.Empty); } }
+    public void Seek(TimeSpan position)
+    {
+        lock (_gate)
+        {
+            if (_reader is null)
+                return;
+
+            var target = position < TimeSpan.Zero ? TimeSpan.Zero : position;
+            if (target > _reader.TotalTime)
+                target = _reader.TotalTime;
+            _reader.CurrentTime = target;
+        }
+
+        PositionChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
     {
@@ -79,6 +111,6 @@ public sealed class NAudioPlaybackService : IPlaybackService
         catch (OperationCanceledException) { }
     }
     private void SetState(AppPlaybackState state) { if (_state == state) return; _state = state; StateChanged?.Invoke(this, EventArgs.Empty); }
-    private void DisposeAudio() { if (_output is not null) _output.PlaybackStopped -= OnPlaybackStopped; _output?.Dispose(); _reader?.Dispose(); _output = null; _reader = null; }
+    private void DisposeAudio() { if (_output is not null) _output.PlaybackStopped -= OnPlaybackStopped; _output?.Dispose(); _reader?.Dispose(); _output = null; _reader = null; _loadedFilePath = null; }
     public ValueTask DisposeAsync() { _timerCts.Cancel(); _timer.Dispose(); lock (_gate) DisposeAudio(); _timerCts.Dispose(); return ValueTask.CompletedTask; }
 }

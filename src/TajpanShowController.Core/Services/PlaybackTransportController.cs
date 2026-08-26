@@ -51,8 +51,34 @@ public sealed class PlaybackTransportController
         if (selected is null)
             return;
 
+        if (PathsEqual(_playback.LoadedFilePath, selected.FilePath))
+        {
+            _playback.Play();
+            _setPlayingTrack(selected);
+            return;
+        }
+
         await _playback.LoadAsync(selected.FilePath, PlaybackState.Playing, cancellationToken);
         _setPlayingTrack(selected);
+    }
+
+    public async Task<bool> SeekAsync(TimeSpan position, CancellationToken cancellationToken = default)
+    {
+        if (_playback.State == PlaybackState.Stopped)
+        {
+            var selected = _getSelectedTrack();
+            if (selected is null)
+                return false;
+
+            if (!PathsEqual(_playback.LoadedFilePath, selected.FilePath))
+                await _playback.LoadAsync(selected.FilePath, PlaybackState.Stopped, cancellationToken);
+        }
+
+        if (_playback.LoadedFilePath is null)
+            return false;
+
+        _playback.Seek(position);
+        return true;
     }
 
     public void Pause()
@@ -138,5 +164,20 @@ public sealed class PlaybackTransportController
         }
 
         return SelectedIndex();
+    }
+
+    private static bool PathsEqual(string? first, string second)
+    {
+        if (string.IsNullOrWhiteSpace(first))
+            return false;
+
+        try
+        {
+            return string.Equals(Path.GetFullPath(first), Path.GetFullPath(second), StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return string.Equals(first, second, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

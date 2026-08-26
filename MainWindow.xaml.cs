@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private PlaylistTrack? _draggedTrack;
     private string? _playlistFilePath;
     private bool _debugAutoScroll = true;
+    private bool _seekPointerActive;
     private readonly PlaylistFileStore _playlistStore = new();
     private MainWindowViewModel ViewModel => (MainWindowViewModel)DataContext;
 
@@ -53,6 +54,57 @@ public partial class MainWindow : Window
     private void Window_DragOver(object sender, DragEventArgs e) => e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
     private async void Window_Drop(object sender, DragEventArgs e) { if (e.Data.GetData(DataFormats.FileDrop) is string[] files) await ViewModel.AddFilesAsync(files); }
     private void PlaylistGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) { if (ViewModel.SelectedTrack is not null) ViewModel.PlayCommand.Execute(null); }
+
+    private void PlaybackSeekSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Slider slider || !ViewModel.BeginSeek())
+            return;
+
+        _seekPointerActive = true;
+        PreviewSeekAtPointer(slider, e);
+        Mouse.Capture(slider);
+        e.Handled = true;
+    }
+
+    private void PlaybackSeekSlider_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_seekPointerActive || e.LeftButton != MouseButtonState.Pressed || sender is not Slider slider)
+            return;
+
+        PreviewSeekAtPointer(slider, e);
+        e.Handled = true;
+    }
+
+    private async void PlaybackSeekSlider_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_seekPointerActive || sender is not Slider slider)
+            return;
+
+        PreviewSeekAtPointer(slider, e);
+        var target = ViewModel.SeekPositionSeconds;
+        _seekPointerActive = false;
+        Mouse.Capture(null);
+        e.Handled = true;
+        await ViewModel.CommitSeekAsync(target);
+    }
+
+    private void PlaybackSeekSlider_LostMouseCapture(object sender, MouseEventArgs e)
+    {
+        if (!_seekPointerActive)
+            return;
+
+        _seekPointerActive = false;
+        ViewModel.CancelSeek();
+    }
+
+    private void PreviewSeekAtPointer(Slider slider, MouseEventArgs e)
+    {
+        if (slider.ActualWidth <= 0)
+            return;
+
+        var fraction = Math.Clamp(e.GetPosition(slider).X / slider.ActualWidth, 0d, 1d);
+        ViewModel.PreviewSeek(ViewModel.SeekPositionFromFraction(fraction));
+    }
 
     private async void NewPlaylist_Click(object sender, RoutedEventArgs e)
     {

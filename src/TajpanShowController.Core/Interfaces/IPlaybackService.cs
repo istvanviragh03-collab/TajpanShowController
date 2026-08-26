@@ -5,6 +5,7 @@ namespace TajpanShowController.Core.Interfaces;
 public interface IPlaybackService : IAsyncDisposable
 {
     PlaybackState State { get; }
+    string? LoadedFilePath { get; }
     TimeSpan Position { get; }
     TimeSpan Duration { get; }
     float Volume { get; set; }
@@ -20,4 +21,5 @@ public interface IPlaybackService : IAsyncDisposable
     void Resume();
     void Stop();
     void Restart();
+    void Seek(TimeSpan position);
 }

@@ -30,6 +30,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     private readonly DispatcherTimer _debugUiTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly PlaylistChangeTracker _playlistChanges = new();
+    private readonly PlaybackSeekSession _seekSession = new();
     private AppSettings _loadedSettings = new();
     private PlaybackState _lastLoggedPlaybackState = PlaybackState.Stopped;
     private bool _isInitializing;
@@ -41,7 +42,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     [ObservableProperty] private PlaylistTrack? playingTrack;
     [ObservableProperty] private string currentTime = "00:00";
     [ObservableProperty] private string totalTime = "00:00";
-    [ObservableProperty] private double progress;
+    [ObservableProperty] private double seekPositionSeconds;
+    [ObservableProperty] private double seekMaximumSeconds;
+    [ObservableProperty] private bool isSeeking;
+    [ObservableProperty] private bool isSeekEnabled;
     [ObservableProperty] private double volume = 75;
     [ObservableProperty] private string systemClock = DateTime.Now.ToString("yyyy. MM. dd.  HH:mm:ss");
     [ObservableProperty] private string connectionLabel = "DISCONNECTED";
@@ -149,8 +153,17 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         await _connectionCoordinator.StartAsync(AutoConnect);
     }
 
-    partial void OnSelectedTrackChanged(PlaylistTrack? value) { RaiseTrackProperties(); if (_playback.State == PlaybackState.Stopped) UpdateRemoteDisplay(); }
-    partial void OnPlayingTrackChanged(PlaylistTrack? value) => RaiseTrackProperties();
+    partial void OnSelectedTrackChanged(PlaylistTrack? value)
+    {
+        RaiseTrackProperties();
+        if (_playback.State != PlaybackState.Stopped)
+            return;
+
+        _seekSession.UpdateFromPlayback(TimeSpan.Zero, value?.Duration ?? TimeSpan.Zero);
+        ApplySeekPresentation();
+        UpdateRemoteDisplay();
+    }
+    partial void OnPlayingTrackChanged(PlaylistTrack? value) { RaiseTrackProperties(); RefreshPlaybackPosition(); }
     partial void OnVolumeChanged(double value) { _playback.Volume = (float)Math.Clamp(value / 100, 0, 1); OnPropertyChanged(nameof(VolumePercent)); }
     partial void OnSelectedAudioDeviceChanged(AudioOutputDevice? value) { _playback.OutputDeviceNumber = value?.DeviceNumber ?? -1; OnPropertyChanged(nameof(AudioStatusLabel)); OnPropertyChanged(nameof(AudioStatusColor)); if (!_isInitializing) _ = SaveAsync(); }
     partial void OnPlaylistNameChanged(string value) { if (_isInitializing) return; SetPlaylistModified(true); _ = SaveAsync(); }
@@ -191,9 +204,55 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     public void SimulateNack() => _simulator.NackDisplayCommands = !_simulator.NackDisplayCommands;
     public void SimulateConnectionLoss() => _simulator.DropResponses = true;
 
+    public bool BeginSeek()
+    {
+        if (!_seekSession.Begin())
+            return false;
+
+        ApplySeekPresentation();
+        return true;
+    }
+
+    public double SeekPositionFromFraction(double fraction) => _seekSession.TargetFromFraction(fraction).TotalSeconds;
+
+    public void PreviewSeek(double seconds)
+    {
+        _seekSession.Preview(TimeSpan.FromSeconds(seconds));
+        ApplySeekPresentation();
+    }
+
+    public async Task CommitSeekAsync(double seconds)
+    {
+        if (!_seekSession.IsSeeking && !_seekSession.Begin())
+            return;
+
+        var target = _seekSession.Preview(TimeSpan.FromSeconds(seconds));
+        ApplySeekPresentation();
+        try
+        {
+            await _transport.SeekAsync(target);
+        }
+        catch (Exception ex)
+        {
+            _debugLog.Write(RemoteDebugLogKind.Error, "Playback seek failed: " + ex.Message);
+            StatusMessage = "A pozĂ­ciĂł nem ĂˇllĂ­thatĂł: " + ex.Message;
+        }
+        finally
+        {
+            _seekSession.Complete(_playback.Position);
+            RefreshPlaybackPosition();
+        }
+    }
+
+    public void CancelSeek()
+    {
+        _seekSession.Cancel(_playback.Position);
+        RefreshPlaybackPosition();
+    }
+
     private async Task ExecuteTransportAsync(Func<CancellationToken, Task> operation)
     {
-        try { await operation(CancellationToken.None); }
+        try { await operation(CancellationToken.None); RefreshPlaybackPosition(); }
         catch (Exception ex) { _debugLog.Write(RemoteDebugLogKind.Error, "Playback command failed: " + ex.Message); StatusMessage = "Nem játszható le: " + ex.Message; }
     }
     private void Stop() { _transport.Stop(); StatusMessage = "Leállítva"; }
@@ -237,9 +296,28 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         OnPropertyChanged(nameof(PlaybackGlyph));
         OnPropertyChanged(nameof(StateShort));
         RaiseTrackProperties();
-        UpdateRemoteDisplay();
+        RefreshPlaybackPosition();
     });
-    private void PlaybackPositionChanged(object? sender, EventArgs e) => OnUi(() => { CurrentTime = Format(_playback.Position); TotalTime = Format(_playback.Duration); Progress = _playback.Duration.TotalMilliseconds <= 0 ? 0 : _playback.Position.TotalMilliseconds / _playback.Duration.TotalMilliseconds * 100; OnPropertyChanged(nameof(LcdLine2)); UpdateRemoteDisplay(); });
+    private void PlaybackPositionChanged(object? sender, EventArgs e) => OnUi(RefreshPlaybackPosition);
+    private void RefreshPlaybackPosition()
+    {
+        var duration = _playback.Duration;
+        if (duration <= TimeSpan.Zero && _playback.State == PlaybackState.Stopped)
+            duration = SelectedTrack?.Duration ?? TimeSpan.Zero;
+        _seekSession.UpdateFromPlayback(_playback.Position, duration);
+        ApplySeekPresentation();
+        UpdateRemoteDisplay();
+    }
+    private void ApplySeekPresentation()
+    {
+        IsSeeking = _seekSession.IsSeeking;
+        IsSeekEnabled = _seekSession.IsEnabled && DisplayedTrack is not null;
+        SeekPositionSeconds = _seekSession.Position.TotalSeconds;
+        SeekMaximumSeconds = _seekSession.Duration.TotalSeconds;
+        CurrentTime = Format(_seekSession.Position);
+        TotalTime = Format(_seekSession.Duration);
+        OnPropertyChanged(nameof(LcdLine2));
+    }
     private void UpdateRemoteDisplay() { var track = DisplayedTrack; _remote.UpdateDisplay(track is null ? 0 : Playlist.IndexOf(track) + 1, track is null ? "" : Path.GetFileNameWithoutExtension(track.FilePath), _playback.State, _playback.Position); }
     private void UpdateRemoteStatus() { IsConnected = _remote.ConnectionState == RemoteConnectionState.Connected; var status = RemoteStatusPresentation.From(_remote.ConnectionState, _remote.LastResponse); ConnectionLabel = status.Text; RemoteStatusColor = status.Color; RemoteStatusDetail = status.Detail; ConnectionDetail = $"{(IsSimulation ? "SIM" : SelectedPort ?? "—")}   {RemoteSerialDefaults.BaudRate} baud"; LastResponse = _remote.LastResponse; }
     private void FlushDiagnostics()
@@ -257,7 +335,9 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     }
     private void SetPlaylistModified(bool modified) { if (modified) _playlistChanges.MarkModified(); else _playlistChanges.MarkSaved(); IsPlaylistModified = _playlistChanges.IsModified; }
     private void RaiseTrackProperties() { OnPropertyChanged(nameof(DisplayedTrack)); OnPropertyChanged(nameof(NowPlayingFilename)); OnPropertyChanged(nameof(SelectedTitle)); OnPropertyChanged(nameof(SelectedPosition)); OnPropertyChanged(nameof(LcdLine1)); OnPropertyChanged(nameof(LcdLine2)); }
-    private static string Format(TimeSpan time) => $"{Math.Clamp((int)time.TotalMinutes, 0, 99):00}:{time.Seconds:00}";
+    private static string Format(TimeSpan time) => time.TotalHours >= 1
+        ? $"{(int)time.TotalHours:00}:{time.Minutes:00}:{time.Seconds:00}"
+        : $"{Math.Max(0, (int)time.TotalMinutes):00}:{Math.Max(0, time.Seconds):00}";
     private static void OnUi(Action action) { var dispatcher = Application.Current?.Dispatcher; if (dispatcher is null || dispatcher.CheckAccess()) action(); else dispatcher.BeginInvoke(action); }
     private async Task SaveAsync()
     {
