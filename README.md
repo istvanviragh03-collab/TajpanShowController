@@ -31,7 +31,7 @@ Previous, Next és a szám vége csak kijelöli a másik számot; automatikus le
 
 ## COM-port és Pro Micro
 
-A fejléc `Settings` oldalán frissítsd a portlistát, válaszd ki a portot, majd kattints a `Connect` gombra. A beállítás fix: `192000 8N1`, ASCII, CRLF, flow control nélkül. Nincs automatikus portválasztás vagy automatikus csatlakozás.
+A fejléc `Settings` oldalán frissítsd a portlistát, válaszd ki a portot, majd kattints a `Connect` gombra. A beállítás fix: `200000 8N1`, ASCII, CRLF, flow control nélkül. Nincs automatikus portválasztás.
 
 Közvetlen Pro Micro USB Serial teszthez ugyanígy a Pro Micro COM-portját válaszd ki. A későbbi transzparens FTDI–RS485 adapterhez ugyanaz a beállítás használható; a PC nem vezérel DE/RE GPIO-t.
 

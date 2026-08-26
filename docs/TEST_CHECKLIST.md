@@ -29,7 +29,7 @@
 ## Remote és szimuláció
 
 - [ ] Portfrissítés után COM-port választható; nincs automatikus csatlakozás.
-- [ ] A felület `192000 8N1` értéket mutat, `115200` sehol nem jelenik meg.
+- [ ] A felület `200000 8N1` értéket mutat, korábbi baud rate sehol nem jelenik meg.
 - [ ] Szimuláció nem foglal valódi COM-portot.
 - [ ] START, STOP, PAUSE, PREV és NEXT működik; nyomva tartás csak egy eseményt okoz.
 - [ ] Hibás sor, NACK és timeout után nincs összeomlás; maximum retry után FAULT jelenik meg.
@@ -38,7 +38,7 @@
 
 ## COM12 hardware smoke teszt
 
-- [ ] COM12 megnyitható 192000 8N1 beállítással.
+- [ ] COM12 megnyitható 200000 8N1 beállítással.
 - [ ] `@S\r\n` kérésre pontos `@Bxxxxxxxx\r\n` válasz érkezik.
 - [ ] A PC `@A\r\n` választ küld az érvényes gombállapotra.
 - [ ] `@N`, `@K`, `@P` és `@T` display parancsokra `@A` érkezik.

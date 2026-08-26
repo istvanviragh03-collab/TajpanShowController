@@ -45,7 +45,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     [ObservableProperty] private double volume = 75;
     [ObservableProperty] private string systemClock = DateTime.Now.ToString("yyyy. MM. dd.  HH:mm:ss");
     [ObservableProperty] private string connectionLabel = "DISCONNECTED";
-    [ObservableProperty] private string connectionDetail = "—   192000 baud";
+    [ObservableProperty] private string connectionDetail = "—   200000 baud";
     [ObservableProperty] private string remoteStatusColor = "#75808A";
     [ObservableProperty] private string remoteStatusDetail = "No active remote connection";
     [ObservableProperty] private string lastResponse = "—";

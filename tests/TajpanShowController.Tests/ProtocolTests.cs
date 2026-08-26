@@ -1,4 +1,5 @@
 using System.Text;
+using TajpanShowController.Core.Interfaces;
 using TajpanShowController.Core.Models;
 using TajpanShowController.Core.Protocol;
 using Xunit;
@@ -8,6 +9,8 @@ namespace TajpanShowController.Tests;
 public sealed class ProtocolTests
 {
     private static string Text(byte[] bytes) => Encoding.ASCII.GetString(bytes);
+
+    [Fact] public void RemoteSerialBaudRateIsTwoHundredThousand() => Assert.Equal(200000, RemoteSerialDefaults.BaudRate);
 
     [Fact] public void FormatsAllOutgoingCommands()
     {

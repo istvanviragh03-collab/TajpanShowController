@@ -2,5 +2,5 @@ namespace TajpanShowController.Core.Interfaces;
 
 public static class RemoteSerialDefaults
 {
-    public const int BaudRate = 192000;
+    public const int BaudRate = 200000;
 }

@@ -152,7 +152,7 @@ Typical values shown by the reference:
 - output channels;
 - sample rate;
 - COM port;
-- baud rate (192000);
+- baud rate (200000);
 - connection state.
 
 Do not invent new protocol behavior in the UI layer.
