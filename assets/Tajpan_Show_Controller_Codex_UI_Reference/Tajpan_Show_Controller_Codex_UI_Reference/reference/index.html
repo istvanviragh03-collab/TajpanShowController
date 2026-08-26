@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tajpán Show Controller — UI Reference</title>
+<style>
+html,body{margin:0;background:#090b0e;color:#edf0f3;font-family:'Segoe UI',Arial,sans-serif;min-width:1200px;min-height:100%;}
+#tajpan-controller-compact{background:#090b0e;color:#edf0f3;font-family:'Segoe UI',Arial,sans-serif;min-height:100vh}
+#tajpan-controller-compact *{box-sizing:border-box}
+.top{height:58px;background:#0d1014;border-bottom:1px solid #262b31;display:flex;align-items:stretch;padding:0 20px;gap:20px}
+.branding{display:flex;align-items:center;gap:9px;min-width:275px}.logo{width:42px;height:42px;position:relative;display:grid;place-items:center}.logo img{width:39px;height:39px;object-fit:contain}.appname{font-weight:700;font-size:15px;line-height:1.1}.appname small{display:block;font-size:8px;font-weight:500;color:#737d87;letter-spacing:1.3px;margin-top:3px}
+.nav{display:flex;align-items:stretch;gap:0;flex:1}.nav button{position:relative;border:0;background:transparent;color:#87919b;padding:0 17px;cursor:pointer;font-size:12px}.nav button:hover{background:#12171c;color:#c7cdd3}.nav button.active{color:#fff;background:#12171c}.nav button.active:after{content:'';position:absolute;height:2px;left:15px;right:15px;bottom:0;background:#d62d32}
+.topstate{display:flex;align-items:center;gap:15px;font-size:10px;color:#a2abb4}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#42d77d;margin-right:5px}
+.page{display:none;padding:14px 18px 18px}.page.active{display:block}.layout{display:grid;grid-template-columns:minmax(610px,1.5fr) minmax(400px,.82fr);gap:11px;min-height:660px}.card{background:#101419;border:1px solid #272d34;border-radius:7px}.cap{font-size:9px;letter-spacing:1.2px;color:#75808a;font-weight:700}
+.playlist{padding:14px;display:flex;flex-direction:column;min-width:0}.playlistHeader{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start}.playlistTitle{font-size:20px;font-weight:650;margin-top:4px}.path{font-size:9px;color:#68737e;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fileBtns{display:flex;gap:5px}.btn{border:1px solid #303842;background:#171c22;color:#dce1e5;border-radius:5px;padding:7px 9px;cursor:pointer;font-size:10px;min-height:30px}.btn:hover{background:#1d242b}.separator{height:1px;background:#252b32;margin:11px 0 7px}
+.tracks{display:flex;flex-direction:column;gap:2px}.track{display:grid;grid-template-columns:22px 32px minmax(0,1fr) 52px;align-items:center;gap:7px;padding:9px 7px;border-radius:5px;font-size:11px;color:#a9b1b9;border:1px solid transparent;cursor:grab;user-select:none}.track:hover{background:#141a20}.track.active{background:#1d2024;border-color:#553034;box-shadow:inset 3px 0 #d62d32;color:#fff}.track.dragging{opacity:.4}.handle{color:#59636d;font-size:13px;text-align:center}.num{color:#66717b}.track.active .num{color:#e45b60}.filename{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.duration{text-align:right;color:#737e88}.playlistFooter{margin-top:auto;display:flex;justify-content:space-between;align-items:center;padding-top:11px}.leftActions{display:flex;gap:5px}.hint{font-size:8px;color:#59636d}
+.rightcol{display:grid;grid-template-rows:174px 1fr;gap:11px;min-width:0}.player{padding:15px 17px}.playerName{font-size:18px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.playerTime{display:flex;justify-content:space-between;margin-top:13px;font-size:10px;color:#7c8791}.progress{height:5px;background:#2b3239;border-radius:4px;margin-top:5px;overflow:hidden}.progress span{display:block;width:48%;height:100%;background:#d62d32}.controls{display:flex;justify-content:center;gap:7px;margin-top:15px}.controls button{height:38px;min-width:48px;border-radius:6px;border:1px solid #303842;background:#171c22;color:white;font-size:13px;cursor:pointer}.controls .play{background:#d62d32;border-color:#d62d32;min-width:58px}
+.statusArea{display:grid;grid-template-columns:1.25fr .8fr .8fr;gap:11px}.lcdCard,.simpleStatus{padding:13px}.lcd{margin-top:10px;background:#abc489;color:#152012;border-radius:3px;border:4px solid #202721;padding:13px 11px;font-family:Consolas,'Courier New',monospace;font-size:16px;line-height:1.45;letter-spacing:.6px;white-space:pre;overflow:hidden;box-shadow:inset 0 0 12px rgba(0,0,0,.27)}.lcdInfo{display:flex;justify-content:space-between;margin-top:7px;font-size:8px;color:#727d87}.ok{color:#4cda82}.simpleStatus{display:flex;flex-direction:column;justify-content:space-between}.bigState{margin-top:18px;font-size:15px;font-weight:650}.subtle{font-size:9px;color:#78828c}.meterWrap{margin-top:13px}.meterRow{display:grid;grid-template-columns:12px 1fr;gap:6px;align-items:center;margin-top:9px;font-size:9px}.meter{height:6px;background:#283038;border-radius:3px;overflow:hidden}.meter span{display:block;height:100%;background:#dce1e4}
+.settings{display:grid;grid-template-columns:190px 1fr;gap:11px}.setNav{padding:8px}.setNav button{display:block;width:100%;border:0;background:transparent;color:#929ba5;text-align:left;padding:10px;border-radius:5px;cursor:pointer;font-size:11px}.setNav button.on{background:#1c2228;color:#fff}.setBody{padding:20px}.section{border-bottom:1px solid #252c33;padding-bottom:17px;margin-bottom:17px}.field{display:grid;grid-template-columns:155px 1fr 90px;gap:10px;align-items:center;margin:9px 0;font-size:10px;color:#9ca5ae}.input{background:#0b0f13;border:1px solid #303842;border-radius:5px;padding:8px}
+.debugStats{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:10px}.stat{padding:10px}.stat small{font-size:8px;color:#6f7983;display:block}.stat b{font-size:12px;display:block;margin-top:3px}.terminal{background:#06080a;border:1px solid #252c33;border-radius:7px;min-height:490px;padding:13px;font:10px/1.75 Consolas,monospace;color:#aab3bc}.tx{color:#62adff}.rx{color:#55dd8b}.parsed{color:#e0c36a}
+</style>
+</head>
+<body>
+<div id="tajpan-controller-compact">
+  <div class="top">
+    <div class="branding">
+      <div class="logo"><img src="assets/taipan-logo-reference.svg" alt="Tajpán logo reference"></div>
+      <div class="appname">Tajpán Show Controller<small>PLAYBACK SYSTEM</small></div>
+    </div>
+    <div class="nav">
+      <button class="active" data-page="play">Playback</button>
+      <button data-page="settings">Settings</button>
+      <button data-page="debug">Remote Debug</button>
+    </div>
+    <div class="topstate"><span><i class="dot"></i>AUDIO</span><span><i class="dot"></i>REMOTE</span></div>
+  </div>
+
+  <section id="play" class="page active">
+    <div class="layout">
+      <div class="card playlist">
+        <div class="playlistHeader">
+          <div><div class="cap">PLAYLIST</div><div class="playlistTitle">Summer Show 2026</div><div class="path">D:\Shows\SummerShow2026\summer_show_2026.txt</div></div>
+          <div class="fileBtns"><button class="btn">New</button><button class="btn">Open</button><button class="btn">Save</button><button class="btn">Save As…</button></div>
+        </div>
+        <div class="separator"></div>
+        <div class="tracks" id="tracks">
+          <div class="track" draggable="true"><span class="handle">⋮⋮</span><span class="num">01</span><span class="filename">walk_in.wav</span><span class="duration">03:14</span></div>
+          <div class="track" draggable="true"><span class="handle">⋮⋮</span><span class="num">02</span><span class="filename">intro.wav</span><span class="duration">01:32</span></div>
+          <div class="track active" draggable="true"><span class="handle">⋮⋮</span><span class="num">03</span><span class="filename">highway_to_hell.wav</span><span class="duration">04:37</span></div>
+          <div class="track" draggable="true"><span class="handle">⋮⋮</span><span class="num">04</span><span class="filename">song_b.wav</span><span class="duration">04:02</span></div>
+          <div class="track" draggable="true"><span class="handle">⋮⋮</span><span class="num">05</span><span class="filename">interlude.wav</span><span class="duration">00:48</span></div>
+          <div class="track" draggable="true"><span class="handle">⋮⋮</span><span class="num">06</span><span class="filename">song_c.wav</span><span class="duration">05:21</span></div>
+          <div class="track" draggable="true"><span class="handle">⋮⋮</span><span class="num">07</span><span class="filename">outro.wav</span><span class="duration">02:16</span></div>
+          <div class="track" draggable="true"><span class="handle">⋮⋮</span><span class="num">08</span><span class="filename">encore.wav</span><span class="duration">05:04</span></div>
+        </div>
+        <div class="playlistFooter"><div class="leftActions"><button class="btn">+ Add files</button><button class="btn">Remove</button></div><div class="hint">Drag to reorder</div></div>
+      </div>
+
+      <div class="rightcol">
+        <div class="card player">
+          <div class="playerName">highway_to_hell.wav</div>
+          <div class="playerTime"><span>02:14</span><span>04:37</span></div>
+          <div class="progress"><span></span></div>
+          <div class="controls"><button>◀◀</button><button class="play" id="playBtn">Ⅱ</button><button>■</button><button>▶▶</button></div>
+        </div>
+        <div class="statusArea">
+          <div class="card lcdCard"><div class="cap">DRUMMER DISPLAY</div><div class="lcd">03 HIGHWAY_TO_HE
+02:14       PLAY</div><div class="lcdInfo"><span>CHARACTER DISPLAY</span><span class="ok">● SYNC</span></div></div>
+          <div class="card simpleStatus"><div><div class="cap">AUDIO</div><div class="bigState ok">● ACTIVE</div><div class="meterWrap"><div class="meterRow"><span>L</span><div class="meter"><span style="width:72%"></span></div></div><div class="meterRow"><span>R</span><div class="meter"><span style="width:66%"></span></div></div></div></div><div class="subtle">Focusrite USB Audio</div></div>
+          <div class="card simpleStatus"><div><div class="cap">REMOTE</div><div class="bigState ok">● ONLINE</div></div><div class="subtle">Communication healthy</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="settings" class="page">
+    <div class="settings">
+      <div class="card setNav"><button class="on">Audio</button><button>Remote / RS-485</button><button>Playback</button><button>Playlist</button><button>Application</button></div>
+      <div class="card setBody">
+        <div class="section"><div class="cap">AUDIO OUTPUT</div><div class="field"><span>Output device</span><div class="input">Focusrite USB Audio</div><span class="ok">● AVAILABLE</span></div><div class="field"><span>Channels</span><div class="input">Output 1–2</div><span></span></div><div class="field"><span>Sample rate</span><div class="input">48,000 Hz</div><span></span></div></div>
+        <div class="section"><div class="cap">REMOTE / RS-485</div><div class="field"><span>COM Port</span><div class="input">COM4</div><span class="ok">● CONNECTED</span></div><div class="field"><span>Baud rate</span><div class="input">192000</div><span></span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="debug" class="page">
+    <div class="debugStats"><div class="card stat"><small>REMOTE</small><b class="ok">ONLINE</b></div><div class="card stat"><small>PORT</small><b>COM4</b></div><div class="card stat"><small>BAUD</small><b>192000</b></div><div class="card stat"><small>LAST RX</small><b>84 ms</b></div><div class="card stat"><small>TX / RX</small><b>12,481 / 12,476</b></div><div class="card stat"><small>ERRORS</small><b>0</b></div></div>
+    <div class="terminal"><div>15:42:11.204&nbsp; <span class="tx">TX&nbsp; @S</span></div><div>15:42:11.211&nbsp; <span class="rx">RX&nbsp; @B00000000</span></div><div class="parsed">15:42:11.211&nbsp; → All remote buttons released</div><div>15:42:11.305&nbsp; <span class="tx">TX&nbsp; @T02:14.0</span></div></div>
+  </section>
+</div>
+<script>
+(()=>{
+ const root=document.getElementById('tajpan-controller-compact');
+ root.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{root.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));root.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));b.classList.add('active');root.querySelector('#'+b.dataset.page).classList.add('active')}));
+ let playing=true; root.querySelector('#playBtn').addEventListener('click',e=>{playing=!playing;e.currentTarget.textContent=playing?'Ⅱ':'▶'});
+ const list=root.querySelector('#tracks');let dragged=null;const renumber=()=>[...list.children].forEach((r,i)=>r.querySelector('.num').textContent=String(i+1).padStart(2,'0'));
+ [...list.children].forEach(row=>{row.addEventListener('dragstart',()=>{dragged=row;row.classList.add('dragging')});row.addEventListener('dragend',()=>{row.classList.remove('dragging');dragged=null;renumber()});row.addEventListener('dragover',e=>{e.preventDefault();if(!dragged||dragged===row)return;const rect=row.getBoundingClientRect();if(e.clientY>rect.top+rect.height/2)row.after(dragged);else row.before(dragged)})});
+})();
+</script>
+</body>
+</html>

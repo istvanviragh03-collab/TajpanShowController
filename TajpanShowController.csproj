@@ -18,8 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="assets\Tajpan_Show_Controller_Final_UI_Spec_v1.0\assets\Tajpan_Logo_Full.png">
-      <Link>Assets\Tajpan_Logo_Full.png</Link>
+    <Resource Include="assets\TajpanLogo.png">
+      <Link>Assets\TajpanLogo.png</Link>
     </Resource>
   </ItemGroup>
 
@@ -28,6 +28,7 @@
     <Compile Remove="tests\**\*.cs" />
     <EmbeddedResource Remove="src\**\*;tests\**\*" />
     <None Remove="src\**\*;tests\**\*" />
+    <Page Remove="assets\**\*.xaml" />
   </ItemGroup>
 
 </Project>

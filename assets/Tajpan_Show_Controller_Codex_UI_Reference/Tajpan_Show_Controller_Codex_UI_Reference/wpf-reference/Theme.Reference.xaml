@@ -1,0 +1,44 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- REFERENCE ONLY. Merge/adapt into the project's existing theme resources. -->
+    <SolidColorBrush x:Key="Tajpan.WindowBackground" Color="#090B0E"/>
+    <SolidColorBrush x:Key="Tajpan.HeaderBackground" Color="#0D1014"/>
+    <SolidColorBrush x:Key="Tajpan.CardBackground" Color="#101419"/>
+    <SolidColorBrush x:Key="Tajpan.CardBorder" Color="#272D34"/>
+    <SolidColorBrush x:Key="Tajpan.ControlBackground" Color="#171C22"/>
+    <SolidColorBrush x:Key="Tajpan.ControlBorder" Color="#303842"/>
+    <SolidColorBrush x:Key="Tajpan.TextPrimary" Color="#EDF0F3"/>
+    <SolidColorBrush x:Key="Tajpan.TextSecondary" Color="#A9B1B9"/>
+    <SolidColorBrush x:Key="Tajpan.TextMuted" Color="#75808A"/>
+    <SolidColorBrush x:Key="Tajpan.Red" Color="#D62D32"/>
+    <SolidColorBrush x:Key="Tajpan.RedLight" Color="#E45B60"/>
+    <SolidColorBrush x:Key="Tajpan.Healthy" Color="#4CDA82"/>
+    <SolidColorBrush x:Key="Tajpan.LcdBackground" Color="#ABC489"/>
+    <SolidColorBrush x:Key="Tajpan.LcdText" Color="#152012"/>
+    <SolidColorBrush x:Key="Tajpan.LcdBezel" Color="#202721"/>
+
+    <Style x:Key="Tajpan.Card" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource Tajpan.CardBackground}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Tajpan.CardBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="7"/>
+    </Style>
+
+    <Style x:Key="Tajpan.Button" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource Tajpan.ControlBackground}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Tajpan.ControlBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{StaticResource Tajpan.TextPrimary}"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Padding" Value="9,5"/>
+        <Setter Property="MinHeight" Value="30"/>
+    </Style>
+
+    <Style x:Key="Tajpan.Caption" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Tajpan.TextMuted}"/>
+        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="FontSize" Value="9"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+</ResourceDictionary>

@@ -1,0 +1,58 @@
+{
+  "product": "Tajpán Show Controller",
+  "target": {
+    "platform": "Windows WPF desktop",
+    "primary_resolution": "1920x1080",
+    "reference_scaling": "100%"
+  },
+  "colors": {
+    "window_background": "#090B0E",
+    "header_background": "#0D1014",
+    "card_background": "#101419",
+    "card_border": "#272D34",
+    "control_background": "#171C22",
+    "control_border": "#303842",
+    "header_active_background": "#12171C",
+    "selected_row_background": "#1D2024",
+    "selected_row_border": "#553034",
+    "primary_text": "#EDF0F3",
+    "secondary_text": "#A9B1B9",
+    "muted_text": "#75808A",
+    "very_muted_text": "#59636D",
+    "tajpan_red": "#D62D32",
+    "tajpan_red_light": "#E45B60",
+    "healthy_green": "#4CDA82",
+    "top_status_green": "#42D77D",
+    "lcd_background": "#ABC489",
+    "lcd_text": "#152012",
+    "lcd_bezel": "#202721",
+    "meter_fill": "#DCE1E4",
+    "meter_track": "#283038",
+    "debug_tx": "#62ADFF",
+    "debug_rx": "#55DD8B",
+    "debug_parsed": "#E0C36A"
+  },
+  "metrics": {
+    "header_height": 58,
+    "page_padding_top": 14,
+    "page_padding_horizontal": 18,
+    "panel_gap": 11,
+    "card_radius": 7,
+    "playlist_padding": 14,
+    "track_row_padding_vertical": 9,
+    "track_row_padding_horizontal": 7,
+    "compact_player_reference_height": 174,
+    "transport_button_height": 38,
+    "transport_button_min_width": 48,
+    "play_button_min_width": 58
+  },
+  "typography": {
+    "ui_font": "Segoe UI",
+    "monospace_font": "Consolas",
+    "app_title_px": 15,
+    "playlist_title_px": 20,
+    "current_filename_px": 18,
+    "body_px": 11,
+    "caption_px": 9
+  }
+}

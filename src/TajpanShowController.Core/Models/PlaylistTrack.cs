@@ -6,4 +6,6 @@ public sealed class PlaylistTrack
     public string FilePath { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public TimeSpan? Duration { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string FileName => Path.GetFileName(FilePath);
 }

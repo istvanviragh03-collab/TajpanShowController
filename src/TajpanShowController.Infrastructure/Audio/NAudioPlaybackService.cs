@@ -13,6 +13,7 @@ public sealed class NAudioPlaybackService : IPlaybackService
     private readonly PeriodicTimer _timer = new(TimeSpan.FromMilliseconds(100));
     private readonly CancellationTokenSource _timerCts = new();
     private float _volume = 0.75f;
+    private int _outputDeviceNumber = -1;
     private AppPlaybackState _state;
     private bool _manualStop;
 
@@ -21,12 +22,19 @@ public sealed class NAudioPlaybackService : IPlaybackService
     public TimeSpan Position { get { lock (_gate) return _reader?.CurrentTime ?? TimeSpan.Zero; } }
     public TimeSpan Duration { get { lock (_gate) return _reader?.TotalTime ?? TimeSpan.Zero; } }
     public float Volume { get => _volume; set { _volume = Math.Clamp(value, 0, 1); lock (_gate) if (_reader is not null) _reader.Volume = _volume; } }
+    public int OutputDeviceNumber { get => _outputDeviceNumber; set => _outputDeviceNumber = value; }
+    public IReadOnlyList<AudioOutputDevice> GetOutputDevices()
+    {
+        var devices = new List<AudioOutputDevice> { new(-1, "Alapértelmezett Windows audio") };
+        for (var i = 0; i < WaveOut.DeviceCount; i++) { try { devices.Add(new(i, WaveOut.GetCapabilities(i).ProductName)); } catch { } }
+        return devices;
+    }
     public event EventHandler? StateChanged;
     public event EventHandler? PositionChanged;
     public event EventHandler? PlaybackCompleted;
     public event EventHandler<Exception>? PlaybackFailed;
 
-    public Task LoadAsync(string filePath, CancellationToken cancellationToken = default)
+    public Task LoadAsync(string filePath, AppPlaybackState initialState = AppPlaybackState.Stopped, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!File.Exists(filePath)) throw new FileNotFoundException("Az audiofájl nem található.", filePath);
@@ -36,10 +44,12 @@ public sealed class NAudioPlaybackService : IPlaybackService
             try
             {
                 _reader = new AudioFileReader(filePath) { Volume = _volume };
-                _output = new WaveOutEvent();
+                _output = new WaveOutEvent { DeviceNumber = _outputDeviceNumber };
                 _output.PlaybackStopped += OnPlaybackStopped;
                 _output.Init(_reader);
-                SetState(AppPlaybackState.Stopped);
+                _manualStop = false;
+                if (initialState == AppPlaybackState.Playing) _output.Play();
+                SetState(initialState);
             }
             catch (Exception ex) { DisposeAudio(); PlaybackFailed?.Invoke(this, ex); throw; }
         }
@@ -50,6 +60,7 @@ public sealed class NAudioPlaybackService : IPlaybackService
     public void Pause() { lock (_gate) { if (_output is null || _state != AppPlaybackState.Playing) return; _output.Pause(); SetState(AppPlaybackState.Paused); } }
     public void Resume() { lock (_gate) { if (_output is null || _state != AppPlaybackState.Paused) return; _output.Play(); SetState(AppPlaybackState.Playing); } }
     public void Stop() { lock (_gate) { if (_output is null) return; _manualStop = true; _output.Stop(); if (_reader is not null) _reader.Position = 0; SetState(AppPlaybackState.Stopped); } }
+    public void Restart() { lock (_gate) { if (_output is null || _reader is null) return; _manualStop = false; _reader.Position = 0; _output.Play(); SetState(AppPlaybackState.Playing); PositionChanged?.Invoke(this, EventArgs.Empty); } }
 
     private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
     {

@@ -14,7 +14,7 @@ public sealed class SerialPortTransport : ISerialTransport
         _port = new SerialPort(portName, 192000, Parity.None, 8, StopBits.One)
         {
             Handshake = Handshake.None, Encoding = System.Text.Encoding.ASCII,
-            NewLine = "\r\n", ReadTimeout = 50, WriteTimeout = 50, DtrEnable = false, RtsEnable = false
+            NewLine = "\r\n", ReadTimeout = 50, WriteTimeout = 50, DtrEnable = true, RtsEnable = false
         };
         _port.Open();
         return Task.CompletedTask;

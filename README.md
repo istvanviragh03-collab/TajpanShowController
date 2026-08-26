@@ -25,17 +25,19 @@ dotnet run --project TajpanShowController.csproj
 
 A biztos elsődleges formátum a Windows/NAudio által olvasható PCM WAV. Az alkalmazás fájlválasztója MP3, WMA, AAC és M4A fájlokat is enged, de ezek dekódolhatósága a gépen elérhető Windows Media Foundation codec-ektől függ; ezek a formátumok ebben a verzióban nincsenek minden gépre garantálva. Hibás, hiányzó vagy nem dekódolható fájl nem állítja le az alkalmazást.
 
+A `Settings / Audio` oldalon a NAudio által használt Windows kimeneti eszköz választható. A választás tartósan bekerül a beállításfájlba, és az újonnan megnyitott lejátszások ezt az eszközt használják.
+
 Previous, Next és a szám vége csak kijelöli a másik számot; automatikus lejátszás nincs. Indítás kizárólag Play/Start művelettel történik.
 
 ## COM-port és Pro Micro
 
-A `Beállítások` ablakban frissítsd a portlistát, válaszd ki a portot, majd kattints a `Connect` gombra. A beállítás fix: `192000 8N1`, ASCII, CRLF, flow control nélkül. Nincs automatikus portválasztás vagy automatikus csatlakozás.
+A fejléc `Settings` oldalán frissítsd a portlistát, válaszd ki a portot, majd kattints a `Connect` gombra. A beállítás fix: `192000 8N1`, ASCII, CRLF, flow control nélkül. Nincs automatikus portválasztás vagy automatikus csatlakozás.
 
 Közvetlen Pro Micro USB Serial teszthez ugyanígy a Pro Micro COM-portját válaszd ki. A későbbi transzparens FTDI–RS485 adapterhez ugyanaz a beállítás használható; a PC nem vezérel DE/RE GPIO-t.
 
 ## Szimuláció
 
-A `Beállítások` ablakban jelöld be a `Szimulációs mód` opciót, majd kapcsolódj. A szimulátor nem nyit valódi COM-portot, és ugyanazt a codec/parser/scheduler réteget használja. A hibás sor, NACK, timeout és kapcsolatvesztés automatikus tesztekkel ellenőrzött; a transport osztályban programozható szimulációs kapcsolókkal is előidézhetők.
+A `Settings` oldalon jelöld be a `Simulation` opciót, majd kapcsolódj. A szimulátor nem nyit valódi COM-portot, és ugyanazt a codec/parser/scheduler réteget használja. START/STOP/PAUSE/PREV/NEXT, hibás sor, NACK és kapcsolatvesztés a felületről is előidézhető.
 
 ## Helyi fájlok
 
