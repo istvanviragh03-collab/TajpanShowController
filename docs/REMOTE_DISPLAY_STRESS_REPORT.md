@@ -88,7 +88,27 @@ reaching the 50 ms watchdog because of application scheduling.
   `IdlePollingIsCoalesced...`); the LCD reconnect test was timing-sensitive in
   the first full run and was made deterministic by moving its 40 ms wait into
   the independent display worker.
-- COM12 hardware stress was attempted, but another running process held the port
-  exclusively (`UnauthorizedAccessException: Access to COM12 is denied`). No
-  post-fix hardware numbers may be claimed until that process is closed and the
-  procedure above is rerun.
+- The first COM12 attempt was blocked by another process holding the port
+  exclusively. The port was later released and the post-fix results are recorded
+  below.
+
+## COM12 post-fix hardware measurements (2026-08-29)
+
+The port was subsequently released and the real hardware tests were rerun.
+
+| Traffic | Cycles | False disconnects | Max poll gap | Max valid-RX gap |
+|---|---:|---:|---:|---:|
+| No display traffic (control) | 20 | 0 | passed | passed |
+| Combined `@N/@K/@P/@T` | 50 | 32 | 32.59 ms | 95.09 ms |
+| Track number `@N` | 20 | 1 | 32.63 ms | 85.01 ms |
+| Track name `@K` | 20 | 7 | 32.41 ms | 78.59 ms |
+| Playback state `@P` | 20 | 1 | 32.58 ms | 59.53 ms |
+| Timecode `@T` | 20 | 4 | 32.23 ms | 62.37 ms |
+
+Interpretation: the PC poll scheduler remains below 50 ms, while valid `@B`
+responses are delayed beyond the watchdog whenever LCD commands are processed.
+The display-free control has zero disconnects. All four display frame families
+can trigger the late-response condition; `@K` and `@T` reproduce it most often,
+and combined traffic is substantially worse. The next optimization must reduce
+LCD command rate/placement or otherwise protect the Remote's opportunity to
+answer `@S`; increasing the 50 ms watchdog would only mask the measured problem.
