@@ -20,6 +20,10 @@ not synchronously wait for an ACK and therefore cannot hold up the next state
 poll. ACK/NACK frames remain protocol-compatible and are consumed by the
 streaming parser.
 
+Timecode formatting is unchanged. Display timecode updates are coalesced at
+the existing 100 ms position-difference threshold; at 50 Hz this intentionally
+does not require a separate transmission for every exact tenth of a second.
+
 RX parsing runs on the communication worker. Every valid `@B` frame updates
 `lastValidRemoteRx` with a monotonic timestamp before logging, button dispatch,
 or UI work. A 5 ms `PeriodicTimer` watchdog compares that timestamp against the
@@ -46,4 +50,3 @@ values here when the FOH/RS485 hardware run is available:
 | Reconnect latency | pending hardware run |
 | False disconnect count | pending hardware run |
 | Test duration | pending hardware run |
-
