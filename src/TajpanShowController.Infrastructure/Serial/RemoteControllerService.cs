@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using TajpanShowController.Core.Diagnostics;
 using TajpanShowController.Core.Interfaces;
@@ -18,6 +19,8 @@ public sealed class RemoteControllerService : IRemoteControllerService
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false });
     private readonly Task _buttonCommandWorker;
     private readonly object _displayGate = new();
+    private readonly SemaphoreSlim _txGate = new(1, 1);
+    private readonly ConcurrentQueue<long> _pollTimestamps = new();
     private ISerialTransport? _transport;
     private CancellationTokenSource? _workerCts;
     private Task? _worker;
@@ -25,6 +28,8 @@ public sealed class RemoteControllerService : IRemoteControllerService
     private DisplaySnapshot _sent = new(-1, "\0", (RemoteDisplayState)(-1), TimeSpan.MinValue);
     private RemoteButtonState? _lastLoggedButtons;
     private int _displayCursor;
+    private long _lastDisplaySendTimestamp;
+    private long _lastPollSentTimestamp;
     private int _connectionGeneration;
     private bool _buttonBaselinePending;
     private long _lastValidResponseTimestamp;
@@ -33,6 +38,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
     public static readonly TimeSpan PollPeriod = TimeSpan.FromMilliseconds(20);
     public static readonly TimeSpan RemoteDisconnectTimeout = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan WatchdogPeriod = TimeSpan.FromMilliseconds(5);
+    private static readonly TimeSpan DisplayHousekeepingPeriod = TimeSpan.FromMilliseconds(40);
     // Keep separate response budgets for state polling and display housekeeping.
     public static readonly TimeSpan PollResponseTimeout = TimeSpan.FromMilliseconds(50);
     public static readonly TimeSpan DisplayResponseTimeout = TimeSpan.FromMilliseconds(100);
@@ -72,8 +78,10 @@ public sealed class RemoteControllerService : IRemoteControllerService
             await transport.OpenAsync(portName, cancellationToken).ConfigureAwait(false);
             lock (_displayGate) _sent = new(-1, "\0", (RemoteDisplayState)(-1), TimeSpan.MinValue);
             _displayCursor = 0;
+            Volatile.Write(ref _lastDisplaySendTimestamp, 0);
             _lastLoggedButtons = null;
             _buttonBaselinePending = true;
+            while (_pollTimestamps.TryDequeue(out _)) { }
             // The watchdog also covers the initial handshake: until the first
             // valid frame arrives, the connection age is the RX age baseline.
             Volatile.Write(ref _lastValidResponseTimestamp, Stopwatch.GetTimestamp());
@@ -143,6 +151,8 @@ public sealed class RemoteControllerService : IRemoteControllerService
     {
         var clock = Stopwatch.StartNew();
         var nextPoll = TimeSpan.Zero;
+        using var receiverCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var receiver = Task.Run(() => ReceiveFramesAsync(transport, parser, generation, pollResponseTimeout, receiverCts.Token), receiverCts.Token);
         using var watchdogCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var watchdog = Task.Run(() => RunConnectionWatchdogAsync(generation, watchdogCts.Token), watchdogCts.Token);
         try
@@ -153,7 +163,11 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 if (wait > TimeSpan.Zero) await Task.Delay(wait, token).ConfigureAwait(false);
                 else TimingMetrics.RecordScheduleDelay(-wait);
                 nextPoll += PollPeriod;
-                await PollOnceAsync(transport, parser, generation, pollResponseTimeout, token).ConfigureAwait(false);
+                var pollSentTimestamp = Stopwatch.GetTimestamp();
+                Volatile.Write(ref _lastPollSentTimestamp, pollSentTimestamp);
+                _pollTimestamps.Enqueue(pollSentTimestamp);
+                await WriteFrameAsync(transport, ProtocolCodec.Poll(), token, publishImmediately: false).ConfigureAwait(false);
+                TimingMetrics.RecordPollSent(pollSentTimestamp);
                 if (token.IsCancellationRequested || !IsCurrentGeneration(generation)) return;
                 if (ConnectionState == RemoteConnectionState.Fault) break;
                 await SendOnePendingDisplayAsync(transport, parser, generation, displayResponseTimeout, token).ConfigureAwait(false);
@@ -170,11 +184,75 @@ public sealed class RemoteControllerService : IRemoteControllerService
         }
         finally
         {
+            receiverCts.Cancel();
             watchdogCts.Cancel();
+            try { await receiver.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (receiverCts.IsCancellationRequested) { }
             try { await watchdog.ConfigureAwait(false); }
             catch (OperationCanceledException) when (watchdogCts.IsCancellationRequested) { }
             if (!token.IsCancellationRequested && ConnectionState != RemoteConnectionState.Fault)
                 SetConnectionState(RemoteConnectionState.Disconnected, generation);
+        }
+    }
+
+    private async Task ReceiveFramesAsync(
+        ISerialTransport transport,
+        StreamingProtocolParser parser,
+        int generation,
+        TimeSpan responseTimeout,
+        CancellationToken token)
+    {
+        var buffer = new byte[256];
+        try
+        {
+            while (!token.IsCancellationRequested && transport.IsOpen)
+            {
+                var count = await transport.ReadAsync(buffer, token).ConfigureAwait(false);
+                if (count <= 0) continue;
+                var bytesTimestamp = Stopwatch.GetTimestamp();
+                var frames = parser.Append(buffer.AsSpan(0, count));
+                if (frames.Count == 0) continue;
+                var parsedTimestamp = Stopwatch.GetTimestamp();
+                foreach (var frame in frames)
+                {
+                    if (!IsCurrentGeneration(generation)) return;
+                    if (frame.Kind == ProtocolFrameKind.Buttons)
+                    {
+                        var pollSent = _pollTimestamps.TryDequeue(out var queued) ? queued : parsedTimestamp;
+                        Volatile.Write(ref _lastValidResponseTimestamp, parsedTimestamp);
+                        TimingMetrics.RecordValidResponse(parsedTimestamp);
+                        TimingMetrics.RecordPoll(pollSent, bytesTimestamp, parsedTimestamp, 0, parsedTimestamp, false, responseTimeout);
+                        LastResponse = frame.Raw;
+                        var buttons = frame.GetButtons();
+                        var changed = !_lastLoggedButtons.HasValue || _lastLoggedButtons.Value != buttons;
+                        var entries = new List<RemoteDebugLogEntry> { new(DateTimeOffset.Now, RemoteDebugLogKind.Rx, frame.Raw, $"Buttons={frame.Payload}") };
+                        var ack = await WriteFrameAsync(transport, ProtocolCodec.Ack(), token, publishImmediately: false).ConfigureAwait(false);
+                        entries.Add(ack);
+                        if (changed && !_buttonBaselinePending) AddButtonChanges(entries, _lastLoggedButtons ?? default, buttons, DateTimeOffset.Now);
+                        if (changed) _debugLog.WriteRange(entries);
+                        SetConnectionState(RemoteConnectionState.Connected, generation);
+                        _lastLoggedButtons = buttons;
+                        if (_buttonBaselinePending) { _edges.Synchronize(buttons); _buttonBaselinePending = false; }
+                        else foreach (var button in _edges.Update(buttons)) _buttonCommands.Writer.TryWrite(new ButtonCommand(generation, button));
+                    }
+                    else if (frame.Kind == ProtocolFrameKind.Unknown)
+                    {
+                        _debugLog.Write(RemoteDebugLogKind.Error, "Invalid frame: " + DisplayRaw(frame.Raw));
+                    }
+                    else
+                    {
+                        _debugLog.Write(RemoteDebugLogKind.Rx, frame.Raw, $"Housekeeping {frame.Kind} response");
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            if (!IsCurrentGeneration(generation)) return;
+            LastResponse = ex.Message;
+            _debugLog.Write(RemoteDebugLogKind.Error, "SerialPort exception: " + ex.Message);
+            SetConnectionState(RemoteConnectionState.Fault, generation);
         }
     }
 
@@ -188,8 +266,13 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 if (!IsCurrentGeneration(generation)) return;
                 var timestamp = Volatile.Read(ref _lastValidResponseTimestamp);
                 if (timestamp == 0) continue;
-                if (Stopwatch.GetElapsedTime(timestamp) >= RemoteDisconnectTimeout)
+                if (Stopwatch.GetElapsedTime(timestamp) >= RemoteDisconnectTimeout &&
+                    ConnectionState != RemoteConnectionState.Disconnected)
+                {
+                    TimingMetrics.RecordTimeout();
+                    _debugLog.Write(RemoteDebugLogKind.Warning, "Poll timeout");
                     SetConnectionState(RemoteConnectionState.Disconnected, generation);
+                }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -204,6 +287,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
     {
         var pollTx = await WriteFrameAsync(transport, ProtocolCodec.Poll(), token, publishImmediately: false).ConfigureAwait(false);
         var pollSentTimestamp = Stopwatch.GetTimestamp();
+        TimingMetrics.RecordPollSent(pollSentTimestamp);
         var read = await ReadFrameAsync(transport, parser, ProtocolFrameKind.Buttons, responseTimeout, token).ConfigureAwait(false);
         var responseFinishedTimestamp = Stopwatch.GetTimestamp();
         if (!IsCurrentGeneration(generation)) return;
@@ -216,6 +300,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
             // Communication health is committed as soon as a valid button frame is parsed.
             // It must not wait for logging, UI dispatch, or playback triggered by the button.
             Volatile.Write(ref _lastValidResponseTimestamp, read.ParsedTimestamp);
+            TimingMetrics.RecordValidResponse(read.ParsedTimestamp);
             LastResponse = read.Selected.Raw;
             var ackTx = await WriteFrameAsync(transport, ProtocolCodec.Ack(), token, publishImmediately: false).ConfigureAwait(false);
             var ackSentTimestamp = Stopwatch.GetTimestamp();
@@ -284,6 +369,11 @@ public sealed class RemoteControllerService : IRemoteControllerService
         TimeSpan responseTimeout,
         CancellationToken token)
     {
+        var pollSent = Volatile.Read(ref _lastPollSentTimestamp);
+        var lastValid = Volatile.Read(ref _lastValidResponseTimestamp);
+        if (pollSent == 0 || lastValid <= pollSent) return;
+        var lastDisplay = Volatile.Read(ref _lastDisplaySendTimestamp);
+        if (lastDisplay != 0 && Stopwatch.GetElapsedTime(lastDisplay) < DisplayHousekeepingPeriod) return;
         DisplaySnapshot wanted, sent;
         lock (_displayGate) { wanted = _wanted; sent = _sent; }
         for (var i = 0; i < 4; i++)
@@ -300,6 +390,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
             if (command is null) continue;
             if (await SendDisplayWithRetryAsync(transport, parser, command, responseTimeout, token).ConfigureAwait(false))
             {
+                Volatile.Write(ref _lastDisplaySendTimestamp, Stopwatch.GetTimestamp());
                 if (!IsCurrentGeneration(generation)) return;
                 lock (_displayGate)
                 {
@@ -337,7 +428,9 @@ public sealed class RemoteControllerService : IRemoteControllerService
         CancellationToken token,
         bool publishImmediately = true)
     {
-        await transport.WriteAsync(data, token).ConfigureAwait(false);
+        await _txGate.WaitAsync(token).ConfigureAwait(false);
+        try { await transport.WriteAsync(data, token).ConfigureAwait(false); }
+        finally { _txGate.Release(); }
         var entry = new RemoteDebugLogEntry(DateTimeOffset.Now, RemoteDebugLogKind.Tx, FrameText(data.Span));
         if (publishImmediately) _debugLog.Write(entry);
         return entry;
@@ -463,6 +556,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
         await DisconnectAsync().ConfigureAwait(false);
         _buttonCommands.Writer.TryComplete();
         await _buttonCommandWorker.ConfigureAwait(false);
+        _txGate.Dispose();
     }
 
     private sealed record DisplaySnapshot(int TrackNumber, string TrackName, RemoteDisplayState State, TimeSpan Position);

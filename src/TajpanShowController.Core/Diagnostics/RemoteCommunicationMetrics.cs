@@ -10,7 +10,10 @@ public sealed record RemoteCommunicationMetricsSnapshot(
     TimeSpan MaxReceiveToParse,
     TimeSpan MaxParseToAck,
     TimeSpan MaxScheduleDelay,
-    TimeSpan MaxTimeoutOvershoot);
+    TimeSpan MaxTimeoutOvershoot,
+    TimeSpan AveragePollGap,
+    TimeSpan MaxPollGap,
+    TimeSpan MaxValidResponseGap);
 
 /// <summary>Lock-free, monotonic timing aggregation for the serial critical path.</summary>
 public sealed class RemoteCommunicationMetrics
@@ -23,8 +26,33 @@ public sealed class RemoteCommunicationMetrics
     private long _maxParseToAckTicks;
     private long _maxScheduleDelayTicks;
     private long _maxTimeoutOvershootTicks;
+    private long _lastPollTimestamp;
+    private long _maxPollGapTicks;
+    private long _totalPollGapTicks;
+    private long _pollGapCount;
+    private long _lastValidResponseTimestamp;
+    private long _maxValidResponseGapTicks;
 
     public void RecordScheduleDelay(TimeSpan delay) => UpdateMax(ref _maxScheduleDelayTicks, ToStopwatchTicks(delay));
+    public void RecordTimeout() => Interlocked.Increment(ref _timeoutCount);
+
+    public void RecordPollSent(long timestamp)
+    {
+        var previous = Interlocked.Exchange(ref _lastPollTimestamp, timestamp);
+        if (previous > 0)
+        {
+            var gap = timestamp - previous;
+            Interlocked.Add(ref _totalPollGapTicks, gap);
+            Interlocked.Increment(ref _pollGapCount);
+            UpdateMax(ref _maxPollGapTicks, gap);
+        }
+    }
+
+    public void RecordValidResponse(long timestamp)
+    {
+        var previous = Interlocked.Exchange(ref _lastValidResponseTimestamp, timestamp);
+        if (previous > 0) UpdateMax(ref _maxValidResponseGapTicks, timestamp - previous);
+    }
 
     public void RecordPoll(
         long pollSentTimestamp,
@@ -62,7 +90,10 @@ public sealed class RemoteCommunicationMetrics
             FromStopwatchTicks(Volatile.Read(ref _maxReceiveToParseTicks)),
             FromStopwatchTicks(Volatile.Read(ref _maxParseToAckTicks)),
             FromStopwatchTicks(Volatile.Read(ref _maxScheduleDelayTicks)),
-            FromStopwatchTicks(Volatile.Read(ref _maxTimeoutOvershootTicks)));
+            FromStopwatchTicks(Volatile.Read(ref _maxTimeoutOvershootTicks)),
+            FromStopwatchTicks(Volatile.Read(ref _pollGapCount) == 0 ? 0 : Volatile.Read(ref _totalPollGapTicks) / Volatile.Read(ref _pollGapCount)),
+            FromStopwatchTicks(Volatile.Read(ref _maxPollGapTicks)),
+            FromStopwatchTicks(Volatile.Read(ref _maxValidResponseGapTicks)));
     }
 
     private static void UpdateMax(ref long target, long value)

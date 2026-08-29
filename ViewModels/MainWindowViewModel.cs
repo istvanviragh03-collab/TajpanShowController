@@ -49,6 +49,10 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
     [ObservableProperty] private string remoteStatusColor = "#75808A";
     [ObservableProperty] private string remoteStatusDetail = "No active remote connection";
     [ObservableProperty] private string lastResponse = "—";
+    [ObservableProperty] private string remoteRttAverage = "—";
+    [ObservableProperty] private string remotePollRate = "—";
+    [ObservableProperty] private string remoteLastRxAge = "—";
+    [ObservableProperty] private string remoteErrorCount = "0";
     [ObservableProperty] private bool isConnected;
     [ObservableProperty] private bool isSimulation;
     [ObservableProperty] private string? selectedPort;
@@ -145,7 +149,7 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
         _remote.StatusChanged += (_, _) => OnUi(UpdateRemoteStatus);
         _clock.Tick += (_, _) => SystemClock = DateTime.Now.ToString("yyyy. MM. dd.  HH:mm:ss");
         _playingBlink.Tick += (_, _) => PlayingIndicatorVisible = _playback.State == PlaybackState.Playing ? !PlayingIndicatorVisible : _playback.State == PlaybackState.Paused;
-        _debugUiTimer.Tick += (_, _) => FlushDiagnostics();
+        _debugUiTimer.Tick += (_, _) => { RefreshRemoteDiagnostics(); FlushDiagnostics(); };
         _clock.Start();
         _playingBlink.Start();
         _debugUiTimer.Start();
@@ -303,6 +307,16 @@ public sealed partial class MainWindowViewModel : ObservableObject, IAsyncDispos
             if (entry.Kind == RemoteDebugLogKind.Rx) LastResponse = entry.Message;
         }
         DiagnosticsFlushed?.Invoke(this, EventArgs.Empty);
+    }
+    private void RefreshRemoteDiagnostics()
+    {
+        var metrics = _remote.TimingMetrics.Snapshot();
+        RemoteRttAverage = $"{metrics.AveragePollRtt.TotalMilliseconds:F1} ms";
+        RemotePollRate = metrics.AveragePollGap > TimeSpan.Zero
+            ? $"{1 / metrics.AveragePollGap.TotalSeconds:F1} Hz" : "—";
+        var age = _remote.TimeSinceLastValidResponse;
+        RemoteLastRxAge = age.HasValue ? $"{age.Value.TotalMilliseconds:F0} ms" : "—";
+        RemoteErrorCount = metrics.TimeoutCount.ToString();
     }
     private void SetPlaylistModified(bool modified) { if (modified) _playlistChanges.MarkModified(); else _playlistChanges.MarkSaved(); IsPlaylistModified = _playlistChanges.IsModified; }
     private void RaiseTrackProperties() { OnPropertyChanged(nameof(DisplayedTrack)); OnPropertyChanged(nameof(NowPlayingFilename)); OnPropertyChanged(nameof(SelectedTitle)); OnPropertyChanged(nameof(SelectedPosition)); OnPropertyChanged(nameof(LcdLine1)); OnPropertyChanged(nameof(LcdLine2)); OnPropertyChanged(nameof(IsSeekEnabled)); }

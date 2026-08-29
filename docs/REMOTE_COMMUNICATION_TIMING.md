@@ -35,6 +35,25 @@ The initial connection timestamp is used as the watchdog baseline until the
 first valid response, so a silent/open COM port is reported disconnected within
 the same 50 ms budget.
 
+## Playback disconnect investigation
+
+On COM12, the failure reproduced when several display fields changed together:
+the old worker shared a blocking request/response read with `@S`, so delayed
+display ACK traffic could leave the last valid button response older than 50 ms.
+The measured terminal gap was 53–56 ms (the normal interval samples hid this
+because there was no later response sample). A display-free 20-cycle baseline
+remained connected.
+
+The worker now has a continuous, single RX reader and an independent monotonic
+poll scheduler. TX writes are serialized by a short semaphore; display writes
+are coalesced (40 ms) and only attempted after the previous poll has produced
+a valid response. The 50-cycle COM12 display stress then completed with zero
+false disconnects and all measured poll/valid-RX gaps below 50 ms.
+
+The hardware stress test also exposes `MaxPollGap`, `MaxValidResponseGap`, and
+the average poll gap for the diagnostic report. `ERRORS` in the UI metrics is
+the communication timeout counter (including watchdog timeouts).
+
 ## Measurements
 
 The repository contains simulation and optional hardware integration tests. The
