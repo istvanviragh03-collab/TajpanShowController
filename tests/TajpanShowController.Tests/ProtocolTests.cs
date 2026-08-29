@@ -10,7 +10,7 @@ public sealed class ProtocolTests
 {
     private static string Text(byte[] bytes) => Encoding.ASCII.GetString(bytes);
 
-    [Fact] public void RemoteSerialBaudRateIsTwoHundredThousand() => Assert.Equal(200000, RemoteSerialDefaults.BaudRate);
+    [Fact] public void RemoteSerialBaudRateIs115200() => Assert.Equal(115200, RemoteSerialDefaults.BaudRate);
 
     [Fact] public void FormatsAllOutgoingCommands()
     {

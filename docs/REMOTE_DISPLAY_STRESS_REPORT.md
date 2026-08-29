@@ -112,3 +112,12 @@ can trigger the late-response condition; `@K` and `@T` reproduce it most often,
 and combined traffic is substantially worse. The next optimization must reduce
 LCD command rate/placement or otherwise protect the Remote's opportunity to
 answer `@S`; increasing the 50 ms watchdog would only mask the measured problem.
+
+### 115200 baud follow-up
+
+The PC transport was changed from 200000 to 115200 baud and validated against
+the real COM12 Remote. The production handshake passed. A subsequent 50-cycle
+combined display stress run produced 27 false disconnects, a 33.38 ms maximum
+poll gap, and a 93.30 ms maximum valid-RX gap. This is a small improvement over
+the 200000-baud run (32 disconnects), but it does not resolve the Remote-side
+response delay while LCD commands are being processed.
