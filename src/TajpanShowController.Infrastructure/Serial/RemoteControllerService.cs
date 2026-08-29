@@ -25,15 +25,15 @@ public sealed class RemoteControllerService : IRemoteControllerService
     private DisplaySnapshot _sent = new(-1, "\0", (RemoteDisplayState)(-1), TimeSpan.MinValue);
     private RemoteButtonState? _lastLoggedButtons;
     private int _displayCursor;
-    private int _controlFailures;
     private int _connectionGeneration;
     private bool _buttonBaselinePending;
     private long _lastValidResponseTimestamp;
 
     public const int MaxAttempts = 3;
-    public static readonly TimeSpan PollPeriod = TimeSpan.FromMilliseconds(10);
-    // The physical Leonardo answers polls in roughly 20-32 ms. Its first display
-    // ACK after a poll can take about 75 ms, so keep separate response budgets.
+    public static readonly TimeSpan PollPeriod = TimeSpan.FromMilliseconds(20);
+    public static readonly TimeSpan RemoteDisconnectTimeout = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan WatchdogPeriod = TimeSpan.FromMilliseconds(5);
+    // Keep separate response budgets for state polling and display housekeeping.
     public static readonly TimeSpan PollResponseTimeout = TimeSpan.FromMilliseconds(50);
     public static readonly TimeSpan DisplayResponseTimeout = TimeSpan.FromMilliseconds(100);
     public static readonly TimeSpan SimulationResponseTimeout = TimeSpan.FromMilliseconds(8);
@@ -74,7 +74,9 @@ public sealed class RemoteControllerService : IRemoteControllerService
             _displayCursor = 0;
             _lastLoggedButtons = null;
             _buttonBaselinePending = true;
-            _controlFailures = 0;
+            // The watchdog also covers the initial handshake: until the first
+            // valid frame arrives, the connection age is the RX age baseline.
+            Volatile.Write(ref _lastValidResponseTimestamp, Stopwatch.GetTimestamp());
             _workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var generation = Interlocked.Increment(ref _connectionGeneration);
             var pollResponseTimeout = simulation ? SimulationResponseTimeout : PollResponseTimeout;
@@ -141,6 +143,8 @@ public sealed class RemoteControllerService : IRemoteControllerService
     {
         var clock = Stopwatch.StartNew();
         var nextPoll = TimeSpan.Zero;
+        using var watchdogCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var watchdog = Task.Run(() => RunConnectionWatchdogAsync(generation, watchdogCts.Token), watchdogCts.Token);
         try
         {
             while (!token.IsCancellationRequested && transport.IsOpen)
@@ -151,7 +155,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 nextPoll += PollPeriod;
                 await PollOnceAsync(transport, parser, generation, pollResponseTimeout, token).ConfigureAwait(false);
                 if (token.IsCancellationRequested || !IsCurrentGeneration(generation)) return;
-                if (ConnectionState is RemoteConnectionState.Fault or RemoteConnectionState.Disconnected) break;
+                if (ConnectionState == RemoteConnectionState.Fault) break;
                 await SendOnePendingDisplayAsync(transport, parser, generation, displayResponseTimeout, token).ConfigureAwait(false);
                 if (clock.Elapsed > nextPoll + PollPeriod) nextPoll = clock.Elapsed;
             }
@@ -166,9 +170,29 @@ public sealed class RemoteControllerService : IRemoteControllerService
         }
         finally
         {
+            watchdogCts.Cancel();
+            try { await watchdog.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (watchdogCts.IsCancellationRequested) { }
             if (!token.IsCancellationRequested && ConnectionState != RemoteConnectionState.Fault)
                 SetConnectionState(RemoteConnectionState.Disconnected, generation);
         }
+    }
+
+    private async Task RunConnectionWatchdogAsync(int generation, CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(WatchdogPeriod);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
+            {
+                if (!IsCurrentGeneration(generation)) return;
+                var timestamp = Volatile.Read(ref _lastValidResponseTimestamp);
+                if (timestamp == 0) continue;
+                if (Stopwatch.GetElapsedTime(timestamp) >= RemoteDisconnectTimeout)
+                    SetConnectionState(RemoteConnectionState.Disconnected, generation);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
 
     private async Task PollOnceAsync(
@@ -193,7 +217,6 @@ public sealed class RemoteControllerService : IRemoteControllerService
             // It must not wait for logging, UI dispatch, or playback triggered by the button.
             Volatile.Write(ref _lastValidResponseTimestamp, read.ParsedTimestamp);
             LastResponse = read.Selected.Raw;
-            _controlFailures = 0;
             var ackTx = await WriteFrameAsync(transport, ProtocolCodec.Ack(), token, publishImmediately: false).ConfigureAwait(false);
             var ackSentTimestamp = Stopwatch.GetTimestamp();
             TimingMetrics.RecordPoll(
@@ -252,7 +275,6 @@ public sealed class RemoteControllerService : IRemoteControllerService
         }
         failedEntries.Add(nackTx);
         _debugLog.WriteRange(failedEntries);
-        if (++_controlFailures >= MaxAttempts) SetConnectionState(RemoteConnectionState.Disconnected, generation);
     }
 
     private async Task SendOnePendingDisplayAsync(
@@ -301,30 +323,12 @@ public sealed class RemoteControllerService : IRemoteControllerService
         TimeSpan responseTimeout,
         CancellationToken token)
     {
-        var commandText = FrameText(command);
-        for (var attempt = 0; attempt < MaxAttempts; attempt++)
-        {
-            await WriteFrameAsync(transport, command, token).ConfigureAwait(false);
-            var read = await ReadFrameAsync(transport, parser, ProtocolFrameKind.Ack, responseTimeout, token).ConfigureAwait(false);
-            if (read is null)
-            {
-                _debugLog.Write(RemoteDebugLogKind.Warning, $"Timeout waiting for ACK to {commandText}");
-            }
-            else
-            {
-                var receivedEntries = new List<RemoteDebugLogEntry>();
-                AddReceivedFrames(receivedEntries, read);
-                if (read.Selected.Kind == ProtocolFrameKind.Nack)
-                    receivedEntries.Add(new RemoteDebugLogEntry(DateTimeOffset.Now, RemoteDebugLogKind.Warning, $"NACK for {commandText}"));
-                else if (read.Selected.Kind != ProtocolFrameKind.Ack)
-                    receivedEntries.Add(new RemoteDebugLogEntry(DateTimeOffset.Now, RemoteDebugLogKind.Warning,
-                        $"Unexpected {read.Selected.Kind} response to {commandText}"));
-                _debugLog.WriteRange(receivedEntries);
-                if (read.Selected.Kind == ProtocolFrameKind.Ack) return true;
-            }
-            if (attempt + 1 < MaxAttempts) return false; // retry remains pending for a later polling interval
-        }
-        return false;
+        // Display updates are housekeeping. Write them without synchronously
+        // waiting for an ACK so a slow display response cannot postpone the
+        // next 20 ms state poll. ACK/NACK frames are consumed by the polling
+        // reader and do not affect the transport connection state.
+        await WriteFrameAsync(transport, command, token).ConfigureAwait(false);
+        return true;
     }
 
     private async ValueTask<RemoteDebugLogEntry> WriteFrameAsync(
@@ -361,7 +365,10 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 if (frames.Count == 0) continue;
                 var parsedTimestamp = Stopwatch.GetTimestamp();
                 var selectedIndex = FindExpectedFrame(frames, expectedKind);
-                return new FrameReadResult(frames, selectedIndex, DateTimeOffset.Now, firstBytesTimestamp, parsedTimestamp);
+                if (frames.Any(frame => frame.Kind == expectedKind ||
+                    expectedKind == ProtocolFrameKind.Ack && frame.Kind == ProtocolFrameKind.Nack ||
+                    frame.Kind == ProtocolFrameKind.Unknown))
+                    return new FrameReadResult(frames, selectedIndex, DateTimeOffset.Now, firstBytesTimestamp, parsedTimestamp);
             }
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
