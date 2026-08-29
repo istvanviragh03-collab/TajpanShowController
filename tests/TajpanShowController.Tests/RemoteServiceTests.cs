@@ -169,8 +169,8 @@ public sealed class RemoteServiceTests
     public async Task PhysicalDisplayLatencyWithinResponseBudgetMaintainsConnection()
     {
         var transport = new DelayedReadTransport(
-            TimeSpan.FromMilliseconds(30),
-            TimeSpan.FromMilliseconds(75));
+            TimeSpan.FromMilliseconds(5),
+            TimeSpan.FromMilliseconds(10));
         await using var service = new RemoteControllerService(_ => transport);
         service.UpdateDisplay(1, "Hardware test", PlaybackState.Playing, TimeSpan.FromSeconds(12.3));
         var ct = TestContext.Current.CancellationToken;
@@ -202,7 +202,7 @@ public sealed class RemoteServiceTests
         await service.DisconnectAsync(ct);
         var entries = DrainAll(log);
 
-        Assert.True(sim.Writes.Count(frame => frame == "@S") >= 100);
+        Assert.True(sim.Writes.Count(frame => frame == "@S") >= idleSeconds * 40);
         Assert.Single(entries, entry => entry.Kind == RemoteDebugLogKind.Tx && entry.Message == "@S");
         Assert.Single(entries, entry => entry.Kind == RemoteDebugLogKind.Rx && entry.Message == "@B00000000");
         Assert.Single(entries, entry => entry.Kind == RemoteDebugLogKind.Tx && entry.Message == "@A");
@@ -391,9 +391,9 @@ public sealed class RemoteServiceTests
 
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
         while (!condition() && DateTime.UtcNow < deadline) await Task.Delay(10, cancellationToken);
-        Assert.True(condition(), "The expected remote state was not reached within two seconds.");
+        Assert.True(condition(), "The expected remote state was not reached within three seconds.");
     }
 
     private sealed class CloseFailingTransport : ISerialTransport

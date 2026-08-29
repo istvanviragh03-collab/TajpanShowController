@@ -121,3 +121,53 @@ combined display stress run produced 27 false disconnects, a 33.38 ms maximum
 poll gap, and a 93.30 ms maximum valid-RX gap. This is a small improvement over
 the 200000-baud run (32 disconnects), but it does not resolve the Remote-side
 response delay while LCD commands are being processed.
+
+## Final single-outstanding scheduler (optimized firmware)
+
+The final WPF scheduler uses one continuous RX reader and one application-level
+transaction owner. Its absolute monotonic deadline advances by 20 ms per poll.
+Each cycle is serialized as follows:
+
+1. send `@S`;
+2. receive and parse one valid `@Bxxxxxxxx`;
+3. immediately send `@A` and close the poll transaction;
+4. start at most one latest-value display transaction only when at least 8 ms
+   plus a 2 ms poll guard remains before the next deadline;
+5. wait asynchronously for its `@A`/`@X` (maximum 30 ms) before any new
+   application transaction is sent.
+
+Display selection priority is playback state, track number, track name, then
+timecode. Each field stores only its latest wanted value. Timecode changes below
+100 ms are coalesced. No FIFO display backlog exists.
+
+Final COM12 measurement at 115200 8N1 with 50 Play/Stop-style cycles:
+
+| Metric | Result |
+|---|---:|
+| Poll count | 530 |
+| Poll interval average | 20.019 ms |
+| Poll interval maximum | 34.884 ms |
+| Poll RTT average | 9.132 ms |
+| Poll RTT median | 8.828 ms |
+| Poll RTT p95 | 10.631 ms |
+| Poll RTT maximum | 19.934 ms |
+| Valid `@B` gap average | 19.986 ms |
+| Valid `@B` gap maximum | 35.027 ms |
+| Display transactions acknowledged | 116 |
+| Display RTT average | 8.404 ms |
+| Display RTT maximum | 10.782 ms |
+| Full display snapshot maximum settling | 84.786 ms |
+| False disconnects | 0 |
+
+The run exercised 646 completed bus transactions (530 polls plus 116 display
+transactions). The complete four-test COM12 hardware integration suite passed,
+including production handshake, LCD synchronization, 50-cycle display stress,
+and repeated cancel/disconnect/reconnect recovery.
+
+The Windows audio regression suite also completed 50 first-use silent WAV loads
+followed by 50 repeated loads without a communication timeout, using the real
+NAudio initialization path and simulated Remote transport. A physical button
+latency capture was offered as a separate opt-in COM12 test, but no button edge
+arrived during the 15-second measurement window; no fabricated latency value is
+reported. Debug logging remained enabled during the hardware stress, but a
+manual WPF run with the Debug page visibly open was not automated in this run.

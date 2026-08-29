@@ -1,6 +1,7 @@
 using TajpanShowController.Core.Diagnostics;
 using TajpanShowController.Core.Interfaces;
 using TajpanShowController.Core.Models;
+using TajpanShowController.Core.Services;
 using TajpanShowController.Infrastructure.Serial;
 using Xunit;
 
@@ -8,6 +9,39 @@ namespace TajpanShowController.Tests;
 
 public sealed class HardwareIntegrationTests
 {
+    [Fact]
+    public async Task ConfiguredComPortMeasuresPhysicalButtonDispatchLatency()
+    {
+        var port = Environment.GetEnvironmentVariable("TAJPAN_HARDWARE_COM");
+        var enabled = string.Equals(
+            Environment.GetEnvironmentVariable("TAJPAN_HARDWARE_BUTTON"), "1", StringComparison.Ordinal);
+        if (string.IsNullOrWhiteSpace(port) || !enabled)
+        {
+            Assert.Skip("Set TAJPAN_HARDWARE_COM and TAJPAN_HARDWARE_BUTTON=1 to run the physical button latency test.");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        await using var service = new RemoteControllerService(_ => new SerialPortTransport());
+        var pressed = new TaskCompletionSource<RemoteButton>(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.ButtonPressed += (_, button) => pressed.TrySetResult(button);
+        await service.ConnectAsync(port, false, ct);
+        var connectDeadline = DateTime.UtcNow.AddSeconds(4);
+        while (DateTime.UtcNow < connectDeadline && service.ConnectionState != RemoteConnectionState.Connected)
+            await Task.Delay(10, ct);
+        Assert.Equal(RemoteConnectionState.Connected, service.ConnectionState);
+
+        var button = await pressed.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        var metrics = service.TimingMetrics.Snapshot();
+        var reportPath = Environment.GetEnvironmentVariable("TAJPAN_BUTTON_REPORT");
+        if (!string.IsNullOrWhiteSpace(reportPath))
+            await File.WriteAllTextAsync(reportPath, string.Join(Environment.NewLine,
+                $"button={button}",
+                $"button_dispatch_avg_ms={metrics.AverageButtonDispatchLatency.TotalMilliseconds:F3}",
+                $"button_dispatch_max_ms={metrics.MaxButtonDispatchLatency.TotalMilliseconds:F3}"), ct);
+        Assert.True(metrics.MaxButtonDispatchLatency > TimeSpan.Zero);
+    }
+
     [Fact]
     public async Task ConfiguredComPortCompletesProductionHandshake()
     {
@@ -167,6 +201,29 @@ public sealed class HardwareIntegrationTests
             $"max valid RX gap={metrics.MaxValidResponseGap.TotalMilliseconds:F2} ms, " +
             $"poll RTT avg/max={metrics.AveragePollRtt.TotalMilliseconds:F2}/{metrics.MaxPollRtt.TotalMilliseconds:F2} ms, " +
             $"false disconnects={falseDisconnects}");
+        var reportPath = Environment.GetEnvironmentVariable("TAJPAN_HARDWARE_REPORT");
+        if (!string.IsNullOrWhiteSpace(reportPath))
+        {
+            var report = string.Join(Environment.NewLine,
+                $"cycles={cycles}",
+                $"false_disconnects={falseDisconnects}",
+                $"poll_count={metrics.PollCount}",
+                $"poll_interval_avg_ms={metrics.AveragePollGap.TotalMilliseconds:F3}",
+                $"poll_interval_max_ms={metrics.MaxPollGap.TotalMilliseconds:F3}",
+                $"poll_rtt_avg_ms={metrics.AveragePollRtt.TotalMilliseconds:F3}",
+                $"poll_rtt_median_ms={metrics.MedianPollRtt.TotalMilliseconds:F3}",
+                $"poll_rtt_p95_ms={metrics.P95PollRtt.TotalMilliseconds:F3}",
+                $"poll_rtt_max_ms={metrics.MaxPollRtt.TotalMilliseconds:F3}",
+                $"valid_rx_gap_avg_ms={metrics.AverageValidResponseGap.TotalMilliseconds:F3}",
+                $"valid_rx_gap_max_ms={metrics.MaxValidResponseGap.TotalMilliseconds:F3}",
+                $"display_transaction_count={metrics.DisplayTransactionCount}",
+                $"display_rtt_avg_ms={metrics.AverageDisplayRtt.TotalMilliseconds:F3}",
+                $"display_rtt_max_ms={metrics.MaxDisplayRtt.TotalMilliseconds:F3}",
+                $"display_snapshot_settling_max_ms={metrics.MaxDisplaySnapshotSettling.TotalMilliseconds:F3}",
+                $"button_dispatch_avg_ms={metrics.AverageButtonDispatchLatency.TotalMilliseconds:F3}",
+                $"button_dispatch_max_ms={metrics.MaxButtonDispatchLatency.TotalMilliseconds:F3}");
+            await File.WriteAllTextAsync(reportPath, report, ct);
+        }
         Assert.True(falseDisconnects == 0,
             $"false disconnects={falseDisconnects}, max poll gap={metrics.MaxPollGap.TotalMilliseconds:F2} ms, " +
             $"max valid RX gap={metrics.MaxValidResponseGap.TotalMilliseconds:F2} ms, state={service.ConnectionState}, " +

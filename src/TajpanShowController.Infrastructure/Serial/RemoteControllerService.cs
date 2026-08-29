@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using System.Collections.Concurrent;
 using System.Threading.Channels;
 using TajpanShowController.Core.Diagnostics;
 using TajpanShowController.Core.Interfaces;
@@ -20,15 +19,14 @@ public sealed class RemoteControllerService : IRemoteControllerService
     private readonly Task _buttonCommandWorker;
     private readonly object _displayGate = new();
     private readonly SemaphoreSlim _txGate = new(1, 1);
-    private readonly ConcurrentQueue<long> _pollTimestamps = new();
     private ISerialTransport? _transport;
     private CancellationTokenSource? _workerCts;
     private Task? _worker;
     private DisplaySnapshot _wanted = new(0, "", RemoteDisplayState.Stopped, TimeSpan.Zero);
     private DisplaySnapshot _sent = new(-1, "\0", (RemoteDisplayState)(-1), TimeSpan.MinValue);
     private RemoteButtonState? _lastLoggedButtons;
-    private int _displayCursor;
     private long _lastDisplaySendTimestamp;
+    private long _displaySnapshotStartedTimestamp;
     private int _connectionGeneration;
     private bool _buttonBaselinePending;
     private long _lastValidResponseTimestamp;
@@ -37,7 +35,9 @@ public sealed class RemoteControllerService : IRemoteControllerService
     public static readonly TimeSpan PollPeriod = TimeSpan.FromMilliseconds(20);
     public static readonly TimeSpan RemoteDisconnectTimeout = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan WatchdogPeriod = TimeSpan.FromMilliseconds(5);
-    private static readonly TimeSpan DisplayHousekeepingPeriod = TimeSpan.FromMilliseconds(40);
+    private static readonly TimeSpan DisplayDeadlineGuard = TimeSpan.FromMilliseconds(2);
+    private static readonly TimeSpan MinimumDisplayTransactionBudget = TimeSpan.FromMilliseconds(8);
+    private static readonly TimeSpan DisplayTransactionTimeout = TimeSpan.FromMilliseconds(30);
     // Keep separate response budgets for state polling and display housekeeping.
     public static readonly TimeSpan PollResponseTimeout = TimeSpan.FromMilliseconds(50);
     public static readonly TimeSpan DisplayResponseTimeout = TimeSpan.FromMilliseconds(100);
@@ -76,11 +76,10 @@ public sealed class RemoteControllerService : IRemoteControllerService
             _transport = transport;
             await transport.OpenAsync(portName, cancellationToken).ConfigureAwait(false);
             lock (_displayGate) _sent = new(-1, "\0", (RemoteDisplayState)(-1), TimeSpan.MinValue);
-            _displayCursor = 0;
+            Volatile.Write(ref _displaySnapshotStartedTimestamp, Stopwatch.GetTimestamp());
             Volatile.Write(ref _lastDisplaySendTimestamp, 0);
             _lastLoggedButtons = null;
             _buttonBaselinePending = true;
-            while (_pollTimestamps.TryDequeue(out _)) { }
             // The watchdog also covers the initial handshake: until the first
             // valid frame arrives, the connection age is the RX age baseline.
             Volatile.Write(ref _lastValidResponseTimestamp, Stopwatch.GetTimestamp());
@@ -136,7 +135,12 @@ public sealed class RemoteControllerService : IRemoteControllerService
             PlaybackState.Paused => RemoteDisplayState.Paused,
             _ => RemoteDisplayState.Stopped
         };
-        lock (_displayGate) _wanted = new(trackNumber, ProtocolCodec.SanitizeTrackName(trackName), remoteState, position);
+        var wanted = new DisplaySnapshot(trackNumber, ProtocolCodec.SanitizeTrackName(trackName), remoteState, position);
+        lock (_displayGate)
+        {
+            if (_wanted != wanted) Volatile.Write(ref _displaySnapshotStartedTimestamp, Stopwatch.GetTimestamp());
+            _wanted = wanted;
+        }
     }
 
     private async Task RunAsync(
@@ -149,17 +153,14 @@ public sealed class RemoteControllerService : IRemoteControllerService
         var clock = Stopwatch.StartNew();
         var nextPoll = TimeSpan.Zero;
         using var receiverCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-        var displaySignals = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
+        var receivedFrames = Channel.CreateUnbounded<ReceivedFrame>(new UnboundedChannelOptions
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
             SingleWriter = true,
             AllowSynchronousContinuations = false
         });
         var receiver = Task.Run(() => ReceiveFramesAsync(
-            transport, parser, generation, pollResponseTimeout, displaySignals.Writer, receiverCts.Token), receiverCts.Token);
-        var displayWorker = Task.Run(() => RunDisplayWorkerAsync(
-            transport, generation, displaySignals.Reader, receiverCts.Token), receiverCts.Token);
+            transport, parser, generation, receivedFrames.Writer, receiverCts.Token), receiverCts.Token);
         using var watchdogCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var watchdog = Task.Run(() => RunConnectionWatchdogAsync(generation, watchdogCts.Token), watchdogCts.Token);
         try
@@ -171,11 +172,38 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 else TimingMetrics.RecordScheduleDelay(-wait);
                 nextPoll += PollPeriod;
                 var pollSentTimestamp = Stopwatch.GetTimestamp();
-                _pollTimestamps.Enqueue(pollSentTimestamp);
-                await WriteFrameAsync(transport, ProtocolCodec.Poll(), token, publishImmediately: false).ConfigureAwait(false);
+                var pollTx = await WriteFrameAsync(
+                    transport, ProtocolCodec.Poll(), token, publishImmediately: false).ConfigureAwait(false);
                 TimingMetrics.RecordPollSent(pollSentTimestamp);
+                var pollResponse = await ReadTransactionResponseAsync(
+                    receivedFrames.Reader, ProtocolFrameKind.Buttons, pollResponseTimeout, token).ConfigureAwait(false);
+                await CompletePollTransactionAsync(
+                    transport, generation, pollTx, pollSentTimestamp, pollResponse, pollResponseTimeout, token).ConfigureAwait(false);
                 if (token.IsCancellationRequested || !IsCurrentGeneration(generation)) return;
                 if (ConnectionState == RemoteConnectionState.Fault) break;
+
+                var displayBudget = nextPoll - clock.Elapsed - DisplayDeadlineGuard;
+                if (displayBudget >= MinimumDisplayTransactionBudget && TryGetPendingDisplay(out var pendingDisplay))
+                {
+                    var displaySent = Stopwatch.GetTimestamp();
+                    await WriteFrameAsync(transport, pendingDisplay.Command, token).ConfigureAwait(false);
+                    var displayResponse = await ReadTransactionResponseAsync(
+                        receivedFrames.Reader, ProtocolFrameKind.Ack, DisplayTransactionTimeout, token).ConfigureAwait(false);
+                    if (displayResponse?.Frame.Kind == ProtocolFrameKind.Ack)
+                    {
+                        TimingMetrics.RecordDisplay(displaySent, displayResponse.Value.ParsedTimestamp);
+                        MarkDisplaySent(pendingDisplay);
+                        Volatile.Write(ref _lastDisplaySendTimestamp, displaySent);
+                    }
+                    else if (displayResponse?.Frame.Kind == ProtocolFrameKind.Nack)
+                    {
+                        _debugLog.Write(RemoteDebugLogKind.Warning, $"Display NACK: {FrameText(pendingDisplay.Command)}");
+                    }
+                    else
+                    {
+                        _debugLog.Write(RemoteDebugLogKind.Warning, $"Display response timeout: {FrameText(pendingDisplay.Command)}");
+                    }
+                }
                 if (clock.Elapsed > nextPoll + PollPeriod) nextPoll = clock.Elapsed;
             }
         }
@@ -190,11 +218,9 @@ public sealed class RemoteControllerService : IRemoteControllerService
         finally
         {
             receiverCts.Cancel();
-            displaySignals.Writer.TryComplete();
+            receivedFrames.Writer.TryComplete();
             watchdogCts.Cancel();
             try { await receiver.ConfigureAwait(false); }
-            catch (OperationCanceledException) when (receiverCts.IsCancellationRequested) { }
-            try { await displayWorker.ConfigureAwait(false); }
             catch (OperationCanceledException) when (receiverCts.IsCancellationRequested) { }
             try { await watchdog.ConfigureAwait(false); }
             catch (OperationCanceledException) when (watchdogCts.IsCancellationRequested) { }
@@ -207,8 +233,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
         ISerialTransport transport,
         StreamingProtocolParser parser,
         int generation,
-        TimeSpan responseTimeout,
-        ChannelWriter<bool> displaySignals,
+        ChannelWriter<ReceivedFrame> framesWriter,
         CancellationToken token)
     {
         var buffer = new byte[256];
@@ -225,34 +250,8 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 foreach (var frame in frames)
                 {
                     if (!IsCurrentGeneration(generation)) return;
-                    if (frame.Kind == ProtocolFrameKind.Buttons)
-                    {
-                        var pollSent = _pollTimestamps.TryDequeue(out var queued) ? queued : parsedTimestamp;
-                        Volatile.Write(ref _lastValidResponseTimestamp, parsedTimestamp);
-                        TimingMetrics.RecordValidResponse(parsedTimestamp);
-                        TimingMetrics.RecordPoll(pollSent, bytesTimestamp, parsedTimestamp, 0, parsedTimestamp, false, responseTimeout);
-                        LastResponse = frame.Raw;
-                        var buttons = frame.GetButtons();
-                        var changed = !_lastLoggedButtons.HasValue || _lastLoggedButtons.Value != buttons;
-                        var entries = new List<RemoteDebugLogEntry> { new(DateTimeOffset.Now, RemoteDebugLogKind.Rx, frame.Raw, $"Buttons={frame.Payload}") };
-                        var ack = await WriteFrameAsync(transport, ProtocolCodec.Ack(), token, publishImmediately: false).ConfigureAwait(false);
-                        entries.Add(ack);
-                        if (changed && !_buttonBaselinePending) AddButtonChanges(entries, _lastLoggedButtons ?? default, buttons, DateTimeOffset.Now);
-                        if (changed) _debugLog.WriteRange(entries);
-                        SetConnectionState(RemoteConnectionState.Connected, generation);
-                        displaySignals.TryWrite(true);
-                        _lastLoggedButtons = buttons;
-                        if (_buttonBaselinePending) { _edges.Synchronize(buttons); _buttonBaselinePending = false; }
-                        else foreach (var button in _edges.Update(buttons)) _buttonCommands.Writer.TryWrite(new ButtonCommand(generation, button));
-                    }
-                    else if (frame.Kind == ProtocolFrameKind.Unknown)
-                    {
-                        _debugLog.Write(RemoteDebugLogKind.Error, "Invalid frame: " + DisplayRaw(frame.Raw));
-                    }
-                    else
-                    {
-                        _debugLog.Write(RemoteDebugLogKind.Rx, frame.Raw, $"Housekeeping {frame.Kind} response");
-                    }
+                    await framesWriter.WriteAsync(
+                        new ReceivedFrame(frame, DateTimeOffset.Now, bytesTimestamp, parsedTimestamp), token).ConfigureAwait(false);
                 }
             }
         }
@@ -264,18 +263,88 @@ public sealed class RemoteControllerService : IRemoteControllerService
             _debugLog.Write(RemoteDebugLogKind.Error, "SerialPort exception: " + ex.Message);
             SetConnectionState(RemoteConnectionState.Fault, generation);
         }
+        finally { framesWriter.TryComplete(); }
     }
 
-    private async Task RunDisplayWorkerAsync(
-        ISerialTransport transport,
-        int generation,
-        ChannelReader<bool> signals,
+    private async Task<ReceivedFrame?> ReadTransactionResponseAsync(
+        ChannelReader<ReceivedFrame> frames,
+        ProtocolFrameKind expectedKind,
+        TimeSpan timeout,
         CancellationToken token)
     {
-        await foreach (var _ in signals.ReadAllAsync(token).ConfigureAwait(false))
+        if (timeout <= TimeSpan.Zero) return null;
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeoutCts.CancelAfter(timeout);
+        try
         {
-            if (!IsCurrentGeneration(generation)) return;
-            await SendOnePendingDisplayAsync(transport, generation, token).ConfigureAwait(false);
+            while (await frames.WaitToReadAsync(timeoutCts.Token).ConfigureAwait(false))
+            {
+                while (frames.TryRead(out var received))
+                {
+                    if (received.Frame.Kind == expectedKind ||
+                        expectedKind == ProtocolFrameKind.Ack && received.Frame.Kind == ProtocolFrameKind.Nack)
+                        return received;
+                    if (received.Frame.Kind == ProtocolFrameKind.Unknown)
+                        _debugLog.Write(RemoteDebugLogKind.Error, "Invalid frame: " + DisplayRaw(received.Frame.Raw));
+                    else
+                        _debugLog.Write(RemoteDebugLogKind.Rx, received.Frame.Raw,
+                            $"Unexpected {received.Frame.Kind} while awaiting {expectedKind}");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested) { }
+        return null;
+    }
+
+    private async Task CompletePollTransactionAsync(
+        ISerialTransport transport,
+        int generation,
+        RemoteDebugLogEntry pollTx,
+        long pollSentTimestamp,
+        ReceivedFrame? received,
+        TimeSpan responseTimeout,
+        CancellationToken token)
+    {
+        var completedTimestamp = Stopwatch.GetTimestamp();
+        if (received?.Frame.Kind != ProtocolFrameKind.Buttons)
+        {
+            TimingMetrics.RecordPoll(pollSentTimestamp, 0, 0, 0, completedTimestamp, true, responseTimeout);
+            LastResponse = "TIMEOUT";
+            _debugLog.Write(RemoteDebugLogKind.Warning, "Poll response timeout");
+            return;
+        }
+
+        var valid = received.Value;
+        Volatile.Write(ref _lastValidResponseTimestamp, valid.ParsedTimestamp);
+        TimingMetrics.RecordValidResponse(valid.ParsedTimestamp);
+        LastResponse = valid.Frame.Raw;
+        var buttons = valid.Frame.GetButtons();
+        var changed = !_lastLoggedButtons.HasValue || _lastLoggedButtons.Value != buttons;
+        var entries = new List<RemoteDebugLogEntry>
+        {
+            pollTx,
+            new(valid.Timestamp, RemoteDebugLogKind.Rx, valid.Frame.Raw, $"Buttons={valid.Frame.Payload}")
+        };
+        var ack = await WriteFrameAsync(transport, ProtocolCodec.Ack(), token, publishImmediately: false).ConfigureAwait(false);
+        var ackTimestamp = Stopwatch.GetTimestamp();
+        TimingMetrics.RecordPoll(
+            pollSentTimestamp, valid.BytesReceivedTimestamp, valid.ParsedTimestamp,
+            ackTimestamp, ackTimestamp, false, responseTimeout);
+        entries.Add(ack);
+        if (changed && !_buttonBaselinePending)
+            AddButtonChanges(entries, _lastLoggedButtons ?? default, buttons, valid.Timestamp);
+        if (changed) _debugLog.WriteRange(entries);
+        SetConnectionState(RemoteConnectionState.Connected, generation);
+        _lastLoggedButtons = buttons;
+        if (_buttonBaselinePending)
+        {
+            _edges.Synchronize(buttons);
+            _buttonBaselinePending = false;
+        }
+        else
+        {
+            foreach (var button in _edges.Update(buttons))
+                _buttonCommands.Writer.TryWrite(new ButtonCommand(generation, button, valid.ParsedTimestamp));
         }
     }
 
@@ -354,7 +423,8 @@ public sealed class RemoteControllerService : IRemoteControllerService
             }
             else
             {
-                foreach (var button in _edges.Update(buttons)) _buttonCommands.Writer.TryWrite(new ButtonCommand(generation, button));
+                foreach (var button in _edges.Update(buttons))
+                    _buttonCommands.Writer.TryWrite(new ButtonCommand(generation, button, read.ParsedTimestamp));
             }
             return;
         }
@@ -385,63 +455,53 @@ public sealed class RemoteControllerService : IRemoteControllerService
         _debugLog.WriteRange(failedEntries);
     }
 
-    private async Task SendOnePendingDisplayAsync(
-        ISerialTransport transport,
-        int generation,
-        CancellationToken token)
+    private bool TryGetPendingDisplay(out PendingDisplay pending)
     {
-        var lastDisplay = Volatile.Read(ref _lastDisplaySendTimestamp);
-        if (lastDisplay != 0)
-        {
-            var elapsed = Stopwatch.GetElapsedTime(lastDisplay);
-            if (elapsed < DisplayHousekeepingPeriod)
-                await Task.Delay(DisplayHousekeepingPeriod - elapsed, token).ConfigureAwait(false);
-        }
-        if (!IsCurrentGeneration(generation) || ConnectionState != RemoteConnectionState.Connected) return;
+        pending = default;
+        if (ConnectionState != RemoteConnectionState.Connected) return false;
         DisplaySnapshot wanted, sent;
         lock (_displayGate) { wanted = _wanted; sent = _sent; }
-        for (var i = 0; i < 4; i++)
+        if (wanted.State != sent.State)
         {
-            var slot = _displayCursor++ % 4;
-            byte[]? command = slot switch
-            {
-                0 when wanted.TrackNumber != sent.TrackNumber => ProtocolCodec.TrackNumber(wanted.TrackNumber),
-                1 when wanted.TrackName != sent.TrackName => ProtocolCodec.TrackName(wanted.TrackName),
-                2 when wanted.State != sent.State => ProtocolCodec.State(wanted.State),
-                3 when sent.Position == TimeSpan.MinValue || Math.Abs((wanted.Position - sent.Position).TotalMilliseconds) >= 100 => ProtocolCodec.Timecode(wanted.Position),
-                _ => null
-            };
-            if (command is null) continue;
-            if (await SendDisplayAsync(transport, command, token).ConfigureAwait(false))
-            {
-                Volatile.Write(ref _lastDisplaySendTimestamp, Stopwatch.GetTimestamp());
-                if (!IsCurrentGeneration(generation)) return;
-                lock (_displayGate)
-                {
-                    _sent = slot switch
-                    {
-                        0 => _sent with { TrackNumber = wanted.TrackNumber },
-                        1 => _sent with { TrackName = wanted.TrackName },
-                        2 => _sent with { State = wanted.State },
-                        _ => _sent with { Position = wanted.Position }
-                    };
-                }
-            }
-            return;
+            pending = new PendingDisplay(2, ProtocolCodec.State(wanted.State), wanted);
+            return true;
         }
+        if (wanted.TrackNumber != sent.TrackNumber)
+        {
+            pending = new PendingDisplay(0, ProtocolCodec.TrackNumber(wanted.TrackNumber), wanted);
+            return true;
+        }
+        if (wanted.TrackName != sent.TrackName)
+        {
+            pending = new PendingDisplay(1, ProtocolCodec.TrackName(wanted.TrackName), wanted);
+            return true;
+        }
+        if (sent.Position == TimeSpan.MinValue ||
+            Math.Abs((wanted.Position - sent.Position).TotalMilliseconds) >= 100)
+        {
+            pending = new PendingDisplay(3, ProtocolCodec.Timecode(wanted.Position), wanted);
+            return true;
+        }
+        return false;
     }
 
-    private async Task<bool> SendDisplayAsync(
-        ISerialTransport transport,
-        byte[] command,
-        CancellationToken token)
+    private void MarkDisplaySent(PendingDisplay pending)
     {
-        // Display updates are housekeeping. Write them without synchronously
-        // waiting for an ACK so a slow display response cannot postpone the
-        // next 20 ms state poll. ACK/NACK frames are consumed by the polling
-        // reader and do not affect the transport connection state.
-        await WriteFrameAsync(transport, command, token).ConfigureAwait(false);
-        return true;
+        lock (_displayGate)
+        {
+            _sent = pending.Slot switch
+            {
+                0 => _sent with { TrackNumber = pending.Snapshot.TrackNumber },
+                1 => _sent with { TrackName = pending.Snapshot.TrackName },
+                2 => _sent with { State = pending.Snapshot.State },
+                _ => _sent with { Position = pending.Snapshot.Position }
+            };
+            if (_sent == _wanted)
+            {
+                var started = Volatile.Read(ref _displaySnapshotStartedTimestamp);
+                if (started > 0) TimingMetrics.RecordDisplaySnapshotSettled(Stopwatch.GetElapsedTime(started));
+            }
+        }
     }
 
     private async ValueTask<RemoteDebugLogEntry> WriteFrameAsync(
@@ -555,6 +615,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
         await foreach (var command in _buttonCommands.Reader.ReadAllAsync().ConfigureAwait(false))
         {
             if (!IsCurrentGeneration(command.Generation)) continue;
+            TimingMetrics.RecordButtonDispatch(command.ParsedTimestamp, Stopwatch.GetTimestamp());
             try { ButtonPressed?.Invoke(this, command.Button); }
             catch (Exception ex) { _debugLog.Write(RemoteDebugLogKind.Error, "Remote button handler failed: " + ex.Message); }
         }
@@ -582,7 +643,13 @@ public sealed class RemoteControllerService : IRemoteControllerService
     }
 
     private sealed record DisplaySnapshot(int TrackNumber, string TrackName, RemoteDisplayState State, TimeSpan Position);
-    private sealed record ButtonCommand(int Generation, RemoteButton Button);
+    private readonly record struct PendingDisplay(int Slot, byte[] Command, DisplaySnapshot Snapshot);
+    private readonly record struct ReceivedFrame(
+        ProtocolFrame Frame,
+        DateTimeOffset Timestamp,
+        long BytesReceivedTimestamp,
+        long ParsedTimestamp);
+    private sealed record ButtonCommand(int Generation, RemoteButton Button, long ParsedTimestamp);
     private sealed record FrameReadResult(
         IReadOnlyList<ProtocolFrame> Frames,
         int SelectedIndex,
