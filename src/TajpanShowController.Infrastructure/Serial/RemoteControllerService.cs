@@ -29,7 +29,6 @@ public sealed class RemoteControllerService : IRemoteControllerService
     private RemoteButtonState? _lastLoggedButtons;
     private int _displayCursor;
     private long _lastDisplaySendTimestamp;
-    private long _lastPollSentTimestamp;
     private int _connectionGeneration;
     private bool _buttonBaselinePending;
     private long _lastValidResponseTimestamp;
@@ -88,10 +87,9 @@ public sealed class RemoteControllerService : IRemoteControllerService
             _workerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var generation = Interlocked.Increment(ref _connectionGeneration);
             var pollResponseTimeout = simulation ? SimulationResponseTimeout : PollResponseTimeout;
-            var displayResponseTimeout = simulation ? SimulationResponseTimeout : DisplayResponseTimeout;
             _worker = Task.Run(() => RunAsync(
                 transport, new StreamingProtocolParser(), generation,
-                pollResponseTimeout, displayResponseTimeout, _workerCts.Token));
+                pollResponseTimeout, _workerCts.Token));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -146,13 +144,22 @@ public sealed class RemoteControllerService : IRemoteControllerService
         StreamingProtocolParser parser,
         int generation,
         TimeSpan pollResponseTimeout,
-        TimeSpan displayResponseTimeout,
         CancellationToken token)
     {
         var clock = Stopwatch.StartNew();
         var nextPoll = TimeSpan.Zero;
         using var receiverCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-        var receiver = Task.Run(() => ReceiveFramesAsync(transport, parser, generation, pollResponseTimeout, receiverCts.Token), receiverCts.Token);
+        var displaySignals = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = true,
+            AllowSynchronousContinuations = false
+        });
+        var receiver = Task.Run(() => ReceiveFramesAsync(
+            transport, parser, generation, pollResponseTimeout, displaySignals.Writer, receiverCts.Token), receiverCts.Token);
+        var displayWorker = Task.Run(() => RunDisplayWorkerAsync(
+            transport, generation, displaySignals.Reader, receiverCts.Token), receiverCts.Token);
         using var watchdogCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var watchdog = Task.Run(() => RunConnectionWatchdogAsync(generation, watchdogCts.Token), watchdogCts.Token);
         try
@@ -164,13 +171,11 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 else TimingMetrics.RecordScheduleDelay(-wait);
                 nextPoll += PollPeriod;
                 var pollSentTimestamp = Stopwatch.GetTimestamp();
-                Volatile.Write(ref _lastPollSentTimestamp, pollSentTimestamp);
                 _pollTimestamps.Enqueue(pollSentTimestamp);
                 await WriteFrameAsync(transport, ProtocolCodec.Poll(), token, publishImmediately: false).ConfigureAwait(false);
                 TimingMetrics.RecordPollSent(pollSentTimestamp);
                 if (token.IsCancellationRequested || !IsCurrentGeneration(generation)) return;
                 if (ConnectionState == RemoteConnectionState.Fault) break;
-                await SendOnePendingDisplayAsync(transport, parser, generation, displayResponseTimeout, token).ConfigureAwait(false);
                 if (clock.Elapsed > nextPoll + PollPeriod) nextPoll = clock.Elapsed;
             }
         }
@@ -185,8 +190,11 @@ public sealed class RemoteControllerService : IRemoteControllerService
         finally
         {
             receiverCts.Cancel();
+            displaySignals.Writer.TryComplete();
             watchdogCts.Cancel();
             try { await receiver.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (receiverCts.IsCancellationRequested) { }
+            try { await displayWorker.ConfigureAwait(false); }
             catch (OperationCanceledException) when (receiverCts.IsCancellationRequested) { }
             try { await watchdog.ConfigureAwait(false); }
             catch (OperationCanceledException) when (watchdogCts.IsCancellationRequested) { }
@@ -200,6 +208,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
         StreamingProtocolParser parser,
         int generation,
         TimeSpan responseTimeout,
+        ChannelWriter<bool> displaySignals,
         CancellationToken token)
     {
         var buffer = new byte[256];
@@ -231,6 +240,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
                         if (changed && !_buttonBaselinePending) AddButtonChanges(entries, _lastLoggedButtons ?? default, buttons, DateTimeOffset.Now);
                         if (changed) _debugLog.WriteRange(entries);
                         SetConnectionState(RemoteConnectionState.Connected, generation);
+                        displaySignals.TryWrite(true);
                         _lastLoggedButtons = buttons;
                         if (_buttonBaselinePending) { _edges.Synchronize(buttons); _buttonBaselinePending = false; }
                         else foreach (var button in _edges.Update(buttons)) _buttonCommands.Writer.TryWrite(new ButtonCommand(generation, button));
@@ -253,6 +263,19 @@ public sealed class RemoteControllerService : IRemoteControllerService
             LastResponse = ex.Message;
             _debugLog.Write(RemoteDebugLogKind.Error, "SerialPort exception: " + ex.Message);
             SetConnectionState(RemoteConnectionState.Fault, generation);
+        }
+    }
+
+    private async Task RunDisplayWorkerAsync(
+        ISerialTransport transport,
+        int generation,
+        ChannelReader<bool> signals,
+        CancellationToken token)
+    {
+        await foreach (var _ in signals.ReadAllAsync(token).ConfigureAwait(false))
+        {
+            if (!IsCurrentGeneration(generation)) return;
+            await SendOnePendingDisplayAsync(transport, generation, token).ConfigureAwait(false);
         }
     }
 
@@ -364,16 +387,17 @@ public sealed class RemoteControllerService : IRemoteControllerService
 
     private async Task SendOnePendingDisplayAsync(
         ISerialTransport transport,
-        StreamingProtocolParser parser,
         int generation,
-        TimeSpan responseTimeout,
         CancellationToken token)
     {
-        var pollSent = Volatile.Read(ref _lastPollSentTimestamp);
-        var lastValid = Volatile.Read(ref _lastValidResponseTimestamp);
-        if (pollSent == 0 || lastValid <= pollSent) return;
         var lastDisplay = Volatile.Read(ref _lastDisplaySendTimestamp);
-        if (lastDisplay != 0 && Stopwatch.GetElapsedTime(lastDisplay) < DisplayHousekeepingPeriod) return;
+        if (lastDisplay != 0)
+        {
+            var elapsed = Stopwatch.GetElapsedTime(lastDisplay);
+            if (elapsed < DisplayHousekeepingPeriod)
+                await Task.Delay(DisplayHousekeepingPeriod - elapsed, token).ConfigureAwait(false);
+        }
+        if (!IsCurrentGeneration(generation) || ConnectionState != RemoteConnectionState.Connected) return;
         DisplaySnapshot wanted, sent;
         lock (_displayGate) { wanted = _wanted; sent = _sent; }
         for (var i = 0; i < 4; i++)
@@ -388,7 +412,7 @@ public sealed class RemoteControllerService : IRemoteControllerService
                 _ => null
             };
             if (command is null) continue;
-            if (await SendDisplayWithRetryAsync(transport, parser, command, responseTimeout, token).ConfigureAwait(false))
+            if (await SendDisplayAsync(transport, command, token).ConfigureAwait(false))
             {
                 Volatile.Write(ref _lastDisplaySendTimestamp, Stopwatch.GetTimestamp());
                 if (!IsCurrentGeneration(generation)) return;
@@ -407,11 +431,9 @@ public sealed class RemoteControllerService : IRemoteControllerService
         }
     }
 
-    private async Task<bool> SendDisplayWithRetryAsync(
+    private async Task<bool> SendDisplayAsync(
         ISerialTransport transport,
-        StreamingProtocolParser parser,
         byte[] command,
-        TimeSpan responseTimeout,
         CancellationToken token)
     {
         // Display updates are housekeeping. Write them without synchronously
