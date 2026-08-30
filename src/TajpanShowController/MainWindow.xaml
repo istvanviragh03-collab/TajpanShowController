@@ -1,0 +1,224 @@
+<Window x:Class="TajpanShowController.MainWindow" Icon="/Assets/TajpanLogo.png" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="clr-namespace:TajpanShowController.ViewModels" Title="Tajp&#x00E1;n Show Controller" Width="1920" Height="1080" MinWidth="1200" MinHeight="760" WindowStyle="None" ResizeMode="CanResize" WindowState="Maximized" Background="{DynamicResource WindowBrush}" Loaded="Window_Loaded" Closing="Window_Closing" AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver">
+  <Window.DataContext><vm:MainWindowViewModel/></Window.DataContext>
+  <Grid Background="{DynamicResource WindowBrush}">
+    <Grid.RowDefinitions><RowDefinition Height="58"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Border Grid.Row="0" Background="{DynamicResource HeaderBrush}" BorderBrush="#262B31" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+      <Grid Margin="20,0"><Grid.ColumnDefinitions><ColumnDefinition Width="275"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="156"/></Grid.ColumnDefinitions>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Image Source="/Assets/TajpanLogo.png" Width="42" Height="42" Stretch="Uniform"/><StackPanel Margin="9,0,0,0" VerticalAlignment="Center"><TextBlock Text="Tajp&#x00E1;n Show Controller" FontSize="15" FontWeight="Bold"/><TextBlock Text="PLAYBACK SYSTEM" FontSize="8" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0"/></StackPanel></StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal"><Button x:Name="PlaybackTab" Style="{StaticResource HeaderTab}" Content="Playback" Click="PlaybackTab_Click" Background="#12171C" Foreground="White"/><Button x:Name="SettingsTab" Style="{StaticResource HeaderTab}" Content="Settings" Click="SettingsTab_Click"/><Button x:Name="DebugTab" Style="{StaticResource HeaderTab}" Content="Remote Debug" Click="DebugTab_Click"/></StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0"><Ellipse Width="7" Height="7" Fill="{DynamicResource GreenBrush}" VerticalAlignment="Center"/><TextBlock Text="AUDIO" Foreground="{DynamicResource SecondaryBrush}" FontSize="10" Margin="5,0,15,0"/><Ellipse Width="7" Height="7" Fill="{Binding RemoteStatusColor}" VerticalAlignment="Center"/><TextBlock Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" FontSize="10" Margin="5,0,0,0" MinWidth="84"/></StackPanel>
+        <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right"><Button Style="{StaticResource HeaderTab}" MinWidth="48" Content="MIN" Click="Minimize_Click"/><Button Style="{StaticResource HeaderTab}" MinWidth="48" Content="MAX" Click="Maximize_Click"/><Button Style="{StaticResource HeaderTab}" MinWidth="48" Content="X" Click="Close_Click"/></StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid x:Name="PlaybackPage" Grid.Row="1" Margin="18,14,18,18"><Grid.ColumnDefinitions><ColumnDefinition Width="1.5*" MinWidth="610"/><ColumnDefinition Width="11"/><ColumnDefinition Width=".82*" MinWidth="400"/></Grid.ColumnDefinitions>
+      <Border Grid.Column="0" Style="{StaticResource Card}" Padding="14"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="11"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Style="{StaticResource Caption}" Text="PLAYLIST"/><TextBox Text="{Binding PlaylistName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" FontSize="20" FontWeight="SemiBold" Margin="0,3,14,0" Padding="0,1" Background="Transparent" BorderThickness="0,0,0,1" BorderBrush="#303842" MaxLength="120"/><TextBlock Text="{Binding PlaylistPath}" FontSize="9" Foreground="#68737E" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal"><Button Content="New" Click="NewPlaylist_Click"/><Button Content="Open" Click="OpenPlaylist_Click" Margin="5,0,0,0"/><Button Content="Save" Click="SavePlaylist_Click" Margin="5,0,0,0"/><Button Content="Save As..." Click="SaveAsPlaylist_Click" Margin="5,0,0,0"/></StackPanel></Grid>
+        <Border Grid.Row="1" BorderBrush="#252B32" BorderThickness="0,0,0,1"/>
+        <ListBox x:Name="PlaylistList" Grid.Row="2" ItemsSource="{Binding Playlist}" SelectedItem="{Binding SelectedTrack}" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" MouseDoubleClick="PlaylistGrid_MouseDoubleClick" PreviewMouseLeftButtonDown="Playlist_PreviewMouseLeftButtonDown" MouseMove="Playlist_MouseMove" DragOver="Playlist_DragOver" Drop="Playlist_Drop">
+          <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,1"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="row" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="row" Property="Background" Value="#141A20"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="row" Property="Background" Value="#1D2024"/><Setter TargetName="row" Property="BorderBrush" Value="#553034"/><Setter TargetName="row" Property="BorderThickness" Value="3,1,1,1"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate><DataTemplate><Grid Height="39" Margin="7,0"><Grid.ColumnDefinitions><ColumnDefinition Width="22"/><ColumnDefinition Width="32"/><ColumnDefinition/><ColumnDefinition Width="84"/><ColumnDefinition Width="52"/></Grid.ColumnDefinitions><TextBlock Text="::::" Foreground="{DynamicResource VeryMutedBrush}" HorizontalAlignment="Center"/><TextBlock Grid.Column="1" Foreground="{DynamicResource RedLightBrush}"><TextBlock.Text><MultiBinding Converter="{StaticResource PlaylistSequenceConverter}"><Binding/><Binding Path="DataContext.Playlist" RelativeSource="{RelativeSource AncestorType=Window}"/></MultiBinding></TextBlock.Text></TextBlock><TextBlock Grid.Column="2" Text="{Binding FileName}" Foreground="{DynamicResource SecondaryBrush}" TextTrimming="CharacterEllipsis"/><StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right"><TextBlock Text="PLAYING" Foreground="{DynamicResource RedLightBrush}" FontSize="9" FontWeight="SemiBold"><TextBlock.Visibility><MultiBinding Converter="{StaticResource PlayingIndicatorConverter}"><Binding/><Binding Path="DataContext.PlayingTrack" RelativeSource="{RelativeSource AncestorType=Window}"/><Binding Path="DataContext.PlayingIndicatorVisible" RelativeSource="{RelativeSource AncestorType=Window}"/></MultiBinding></TextBlock.Visibility></TextBlock></StackPanel><TextBlock Grid.Column="4" Text="{Binding Duration, StringFormat={}{0:mm\\:ss}, TargetNullValue=-}" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Right"/></Grid></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+        <Grid Grid.Row="3" Margin="0,11,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Button Content="+ Add files" Click="AddFiles_Click"/><Button Grid.Column="1" Content="Remove" Command="{Binding RemoveCommand}" Margin="5,0,0,0"/><StackPanel Grid.Column="2" Orientation="Horizontal" Margin="14,0"><Button Content="UP" Command="{Binding MoveUpCommand}"/><Button Content="DOWN" Command="{Binding MoveDownCommand}" Margin="5,0,0,0"/></StackPanel><TextBlock Grid.Column="3" Text="Drag to reorder" FontSize="8" Foreground="{DynamicResource VeryMutedBrush}"/></Grid>
+      </Grid></Border>
+
+      <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="210"/><RowDefinition Height="10"/><RowDefinition Height="175"/><RowDefinition Height="10"/><RowDefinition Height="72"/><RowDefinition Height="10"/><RowDefinition Height="142"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Border Style="{StaticResource Card}" Padding="17,15">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <TextBlock Text="{Binding NowPlayingFilename}" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+            <Grid Grid.Row="1" Margin="0,13,0,0"><TextBlock Text="{Binding CurrentTime}" Foreground="#7C8791" FontSize="10"/><TextBlock Text="{Binding TotalTime}" Foreground="#7C8791" FontSize="10" HorizontalAlignment="Right"/></Grid>
+            <Slider x:Name="SeekSlider" Grid.Row="2" Style="{StaticResource PlaybackSeekSlider}" Margin="0,2,0,0"
+                    Minimum="0" Maximum="{Binding SeekDurationSeconds}" Value="{Binding SeekPositionSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    IsEnabled="{Binding IsSeekEnabled}" IsMoveToPointEnabled="False" PreviewMouseLeftButtonDown="SeekSlider_PreviewMouseLeftButtonDown"
+                    ToolTip="Kattintással vagy húzással állítható a lejátszási pozíció"/>
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0"><Button Content="PREV" Command="{Binding PreviousCommand}" MinWidth="52" Height="38"/><Button Style="{StaticResource PrimaryTransport}" Content="PLAY" Command="{Binding PlayCommand}" Margin="7,0"/><Button Content="PAUSE" Command="{Binding PauseCommand}" MinWidth="54" Height="38"/><Button Content="STOP" Command="{Binding StopCommand}" MinWidth="52" Height="38" Margin="7,0,0,0"/><Button Content="NEXT" Command="{Binding NextCommand}" MinWidth="52" Height="38" Margin="7,0,0,0"/></StackPanel>
+            <Grid Grid.Row="4" Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="55"/><ColumnDefinition/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions><TextBlock Text="Volume" Foreground="{DynamicResource SecondaryBrush}" VerticalAlignment="Center"/><Slider Grid.Column="1" Style="{StaticResource PlaybackSlider}" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="9,0" VerticalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding VolumePercent}" Foreground="{DynamicResource SecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+          </Grid>
+        </Border>
+        <Border Grid.Row="2" Style="{StaticResource Card}" Padding="13">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Style="{StaticResource Caption}" Text="REMOTE DISPLAY" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="1" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Text" Value="● NO SYNC"/>
+                    <Setter Property="Foreground" Value="{Binding RemoteStatusColor}"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding ConnectionLabel}" Value="CONNECTED">
+                        <Setter Property="Text" Value="● SYNC"/>
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding ConnectionLabel}" Value="ERROR">
+                        <Setter Property="Text" Value="● ERROR"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+            </Grid>
+            <Border Grid.Row="1" Background="{DynamicResource LcdBrush}" BorderBrush="#202721" BorderThickness="4" CornerRadius="3" Padding="10,5" Margin="0,8,0,0">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="{Binding LcdLine1}" FontFamily="Consolas" FontSize="16" Foreground="{DynamicResource LcdTextBrush}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                <Grid Grid.Row="1">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding CurrentTime}" FontFamily="Consolas" FontSize="16" Foreground="{DynamicResource LcdTextBrush}" TextWrapping="NoWrap"/>
+                  <TextBlock Grid.Column="1" Text="{Binding StateShort}" FontFamily="Consolas" FontSize="16" Foreground="{DynamicResource LcdTextBrush}" TextWrapping="NoWrap" HorizontalAlignment="Right"/>
+                </Grid>
+              </Grid>
+            </Border>
+          </Grid>
+        </Border>
+        <Border Grid.Row="4" Style="{StaticResource Card}" Padding="13"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Style="{StaticResource Caption}" Text="AUDIO"/><TextBlock Grid.Column="1" Text="●" Foreground="{Binding AudioStatusColor}" FontSize="15" Margin="10,0,4,0"/><TextBlock Grid.Column="2" Text="{Binding AudioStatusLabel}" Foreground="{Binding AudioStatusColor}" FontWeight="SemiBold"/><TextBlock Grid.Column="3" Text="{Binding SelectedAudioDevice.Name}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" Margin="22,0,14,0"/><StackPanel Grid.Column="4" Orientation="Horizontal"><TextBlock Text="L" FontSize="9" VerticalAlignment="Center"/><ProgressBar Height="6" Width="90" Maximum="100" Value="0" Background="#283038" Foreground="#DCE1E4" Margin="5,0,14,0" VerticalAlignment="Center"/><TextBlock Text="R" FontSize="9" VerticalAlignment="Center"/><ProgressBar Height="6" Width="90" Maximum="100" Value="0" Background="#283038" Foreground="#DCE1E4" Margin="5,0,0,0" VerticalAlignment="Center"/></StackPanel></Grid></Border>
+        <Border Grid.Row="6" Style="{StaticResource Card}" Padding="13,11">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="78"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <TextBlock Style="{StaticResource Caption}" Text="REMOTE"/>
+              <TextBlock Grid.Column="1" Text="●" Foreground="{Binding RemoteStatusColor}" FontSize="15" Margin="10,0,4,0"/>
+              <TextBlock Grid.Column="2" Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" FontWeight="SemiBold"/>
+              <TextBlock Grid.Column="3" Text="{Binding RemoteStatusDetail}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" Margin="18,0,0,0" HorizontalAlignment="Right"/>
+            </Grid>
+            <TextBlock Grid.Row="1" Text="{Binding ConnectionDetail}" Foreground="{DynamicResource VeryMutedBrush}" FontSize="9" Margin="0,5,0,4" TextTrimming="CharacterEllipsis"/>
+            <Grid Grid.Row="2">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <StackPanel Margin="0,0,8,5"><TextBlock Style="{StaticResource Caption}" Text="PORT"/><TextBlock Text="{Binding SelectedPort, TargetNullValue=—, FallbackValue=—}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+              <StackPanel Grid.Column="1" Margin="8,0,0,5"><TextBlock Style="{StaticResource Caption}" Text="POLL"/><TextBlock Text="{Binding RemotePollRate}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+              <StackPanel Grid.Row="1" Margin="0,0,8,0"><TextBlock Style="{StaticResource Caption}" Text="LAST RX"/><TextBlock Text="{Binding RemoteLastRxAge}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,0"><TextBlock Style="{StaticResource Caption}" Text="ERRORS"/><TextBlock Text="{Binding RemoteErrorCount}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+            </Grid>
+          </Grid>
+        </Border>
+      </Grid>
+    </Grid>
+
+    <Grid x:Name="SettingsPage" Grid.Row="1" Margin="18,14,18,18" Visibility="Collapsed">
+      <Border Style="{StaticResource Card}" Padding="24">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel MaxWidth="1180" HorizontalAlignment="Stretch">
+            <TextBlock Text="SETTINGS" FontSize="21" FontWeight="SemiBold" Margin="0,0,0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="AUDIO"/>
+            <Grid Margin="0,12">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Output device" Foreground="{DynamicResource SecondaryBrush}"/>
+              <ComboBox Grid.Column="1" ItemsSource="{Binding AudioDevices}" SelectedItem="{Binding SelectedAudioDevice}"/>
+              <TextBlock Grid.Column="2" Text="AVAILABLE" Foreground="{DynamicResource GreenBrush}" Margin="12,0,0,0"/>
+            </Grid>
+            <Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="REMOTE / RS-485"/>
+            <Grid Margin="0,12">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+              <TextBlock Text="COM Port" Foreground="{DynamicResource SecondaryBrush}"/>
+              <ComboBox Grid.Column="1" ItemsSource="{Binding Ports}" SelectedItem="{Binding SelectedPort}"/>
+              <TextBlock Grid.Column="2" Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" Margin="12,0,0,0" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+            <Grid Margin="0,5">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Baud rate" Foreground="{DynamicResource SecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="115200 8N1" Background="#0B0F13" Padding="8"/>
+              <Button Grid.Column="2" Content="Refresh" Click="RefreshPorts_Click" Margin="12,0,0,0"/>
+            </Grid>
+            <UniformGrid Rows="1" Columns="4" Margin="0,14,0,0">
+              <StackPanel><TextBlock Style="{StaticResource Caption}" Text="RTT AVG"/><TextBlock Text="{Binding RemoteRttAverage}" Margin="0,4,0,0"/></StackPanel>
+              <StackPanel><TextBlock Style="{StaticResource Caption}" Text="POLL"/><TextBlock Text="{Binding RemotePollRate}" Margin="0,4,0,0"/></StackPanel>
+              <StackPanel><TextBlock Style="{StaticResource Caption}" Text="LAST RX"/><TextBlock Text="{Binding RemoteLastRxAge}" Margin="0,4,0,0"/></StackPanel>
+              <StackPanel><TextBlock Style="{StaticResource Caption}" Text="ERRORS"/><TextBlock Text="{Binding RemoteErrorCount}" Margin="0,4,0,0"/></StackPanel>
+            </UniformGrid>
+            <Grid Margin="0,10,0,0">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="1">
+                <CheckBox Content="Auto Connect on startup" IsChecked="{Binding AutoConnect, Mode=TwoWay}"/>
+                <CheckBox Content="Auto Reconnect on connection loss" IsChecked="{Binding AutoReconnect, Mode=TwoWay}" Margin="0,9,0,0"/>
+              </StackPanel>
+            </Grid>
+            <Grid Margin="0,12,0,5">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Status detail" Foreground="{DynamicResource SecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding RemoteStatusDetail}" Foreground="{Binding RemoteStatusColor}" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+            <StackPanel Orientation="Horizontal" Margin="180,14,0,0">
+              <Button Content="Connect" Command="{Binding ConnectCommand}"/>
+              <Button Content="Disconnect" Command="{Binding DisconnectCommand}" Margin="6,0"/>
+              <CheckBox Content="Simulation" IsChecked="{Binding IsSimulation}" VerticalAlignment="Center" Margin="12,0"/>
+            </StackPanel>
+            <TextBlock Style="{StaticResource Caption}" Text="SIMULATION CONTROLS" Margin="180,16,0,0"/>
+            <WrapPanel Margin="180,10,0,0">
+              <Button Content="START" Tag="10000000" Click="SimButton_Click"/>
+              <Button Content="STOP" Tag="01000000" Click="SimButton_Click" Margin="5,0"/>
+              <Button Content="PAUSE" Tag="00100000" Click="SimButton_Click"/>
+              <Button Content="PREV" Tag="00010000" Click="SimButton_Click" Margin="5,0"/>
+              <Button Content="NEXT" Tag="00001000" Click="SimButton_Click"/>
+              <Button Content="Malformed" Click="Malformed_Click" Margin="12,0,0,0"/>
+              <Button Content="NACK" Click="Nack_Click" Margin="5,0"/>
+              <Button Content="Connection loss" Click="Loss_Click"/>
+            </WrapPanel>
+            <Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="PLAYBACK"/>
+            <Grid Margin="0,12">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*" MaxWidth="720"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Master volume" Foreground="{DynamicResource SecondaryBrush}"/>
+              <Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Volume}"/>
+            </Grid>
+            <Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="PLAYLIST"/>
+            <Grid Margin="0,12">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Current playlist" Foreground="{DynamicResource SecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding PlaylistName}" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+            <Grid Margin="0,5">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <TextBlock Text="File" Foreground="{DynamicResource SecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding PlaylistPath}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+            <Border BorderBrush="#252C33" BorderThickness="0,0,0,1" Margin="0,10,0,20"/>
+            <TextBlock Style="{StaticResource Caption}" Text="APPLICATION"/>
+            <TextBlock Text="Settings and playlist state are saved locally for the current Windows user." Foreground="{DynamicResource MutedBrush}" Margin="0,10,0,8"/>
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource SecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBlock FontSize="9" FontWeight="SemiBold" Margin="0,0,0,20">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Text" Value="PLAYLIST SAVED"/>
+                  <Setter Property="Foreground" Value="{DynamicResource GreenBrush}"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsPlaylistModified}" Value="True">
+                      <Setter Property="Text" Value="PLAYLIST MODIFIED"/>
+                      <Setter Property="Foreground" Value="{DynamicResource RedLightBrush}"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+
+    <Grid x:Name="DebugPage" Grid.Row="1" Margin="18,14,18,18" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="10"/><RowDefinition/></Grid.RowDefinitions><UniformGrid Rows="1" Columns="6"><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="REMOTE"/><TextBlock Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="PORT"/><TextBlock Text="{Binding SelectedPort}" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="BAUD"/><TextBlock Text="115200" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="LAST RX"/><TextBlock Text="{Binding LastResponse}" FontWeight="Bold" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10" Margin="0,0,7,0"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="TX / RX"/><TextBlock Text="change based" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border><Border Style="{StaticResource Card}" Padding="10"><StackPanel><TextBlock Style="{StaticResource Caption}" Text="LOG LIMIT"/><TextBlock Text="3000 rows" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border></UniformGrid>
+      <ListBox x:Name="DebugLogList" Grid.Row="2" ItemsSource="{Binding Diagnostics}" FontFamily="Consolas" FontSize="10" Padding="13" ScrollViewer.ScrollChanged="DebugLog_ScrollChanged" ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
+        <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="IsHitTestVisible" Value="False"/></Style></ListBox.ItemContainerStyle>
+        <ListBox.ItemTemplate><DataTemplate><DataTemplate.Resources><Style TargetType="TextBlock"><Setter Property="Foreground" Value="#A9B1B9"/><Style.Triggers><DataTrigger Binding="{Binding Kind}" Value="Tx"><Setter Property="Foreground" Value="#69BFD1"/></DataTrigger><DataTrigger Binding="{Binding Kind}" Value="Rx"><Setter Property="Foreground" Value="#6FC493"/></DataTrigger><DataTrigger Binding="{Binding Kind}" Value="Event"><Setter Property="Foreground" Value="#D6B45F"/></DataTrigger><DataTrigger Binding="{Binding Kind}" Value="Playback"><Setter Property="Foreground" Value="#B59ADD"/></DataTrigger><DataTrigger Binding="{Binding Kind}" Value="State"><Setter Property="Foreground" Value="#79A9D8"/></DataTrigger><DataTrigger Binding="{Binding Kind}" Value="Warning"><Setter Property="Foreground" Value="#D9A441"/></DataTrigger><DataTrigger Binding="{Binding Kind}" Value="Error"><Setter Property="Foreground" Value="#E45B60"/></DataTrigger></Style.Triggers></Style></DataTemplate.Resources><Grid Margin="2,1"><Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition Width="74"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <TextBlock Text="{Binding TimestampText}" FontFamily="Consolas"/><TextBlock Grid.Column="1" Text="{Binding KindText}" FontFamily="Consolas" FontWeight="SemiBold"/><TextBlock Grid.Column="2" Text="{Binding Message}" FontFamily="Consolas"/><TextBlock Grid.Column="3" Text="{Binding ParsedDescription, StringFormat={}  → {0}}" FontFamily="Consolas" Foreground="#7E8993" TextTrimming="CharacterEllipsis"/>
+        </Grid></DataTemplate></ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+  </Grid>
+</Window>

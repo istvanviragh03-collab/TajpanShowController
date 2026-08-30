@@ -1,45 +1,37 @@
-# Tajpán Show Controller – manuális tesztlista
+# Tajpán Show Controller V1.0.0 acceptance checklist
 
-## Indítás és elrendezés
+## Repository és build
 
-- [ ] Az alkalmazás controller nélkül, kezeletlen kivétel nélkül elindul.
-- [ ] 1920×1080 / 100% és 125% skálázás mellett nincs panelátfedés vagy horizontális görgetés.
-- [ ] A fejléc, fő tartalom, playback sáv és státuszsáv nem fedik egymást.
-- [ ] Az 58 px-es fejlécben Playback, Settings és Remote Debug tab található.
-- [ ] A playlist a Playback oldal domináns bal oldali panelje; a jobb oldali player kompakt.
-- [ ] A player alatt külön Drummer Display, Audio és Remote kártya található.
-- [ ] Nincs Queue panel vagy queue művelet.
-- [ ] Az eredeti Tajpán-logó torzítás és átszínezés nélkül látható.
-- [ ] A főképernyőn csak kompakt remote állapot látható; diagnosztika csak a Beállítások ablakban van.
+- [ ] A working tree tiszta, a `v1.0.0-preopt` checkpoint elérhető GitHubon.
+- [ ] A solution a `src/TajpanShowController.slnx` útvonalon restore-olható és buildelhető.
+- [ ] A Release build 0 errorral és a release-változtatásokból eredő warning nélkül készül.
+- [ ] A teljes automatizált suite sikeres; csak explicit hardware-interakciót igénylő teszt maradhat opt-in.
+- [ ] A `build/TajpanShowController-v1.0.0-win-x64` artifact self-contained és PDB/debug/test fájloktól mentes.
 
-## Playlist és playback
+## Alkalmazás és playlist
 
-- [ ] Több WAV fájl hozzáadható fájlválasztóval és drag-and-droppal.
-- [ ] Dupla kattintás és Play elindítja a kijelölt számot.
-- [ ] Play/Pause/Resume, Stop és hangerő működik.
-- [ ] Previous/Next nem indít automatikus playbacket.
-- [ ] A szám vége a következőt csak kijelöli.
-- [ ] Fel/le mozgatás, eltávolítás, JSON export/import és megerősített listatörlés működik.
-- [ ] Hiányzó, sérült vagy nem támogatott fájl kezelhető hibaüzenetet ad.
-- [ ] Újraindítás után a playlist és hangerő visszatöltődik.
-- [ ] PLAYING/PAUSED állapotban a Now Playing és az LCD a PlayingTrack adatait tartja meg másik sor kijelölésekor is.
-- [ ] A játszott sor PLAYING alatt villogó, PAUSED alatt folyamatos Playing jelzést kap.
-- [ ] A Settings oldalon kiválasztott Windows audioeszköz újraindítás után visszatöltődik.
+- [ ] A publikált `TajpanShowController.exe` tisztán elindul.
+- [ ] Playlist betöltés, mentés és automatikus persistence működik.
+- [ ] Hozzáadás, törlés, drag-and-drop és fel/le rendezés működik.
+- [ ] Play, Pause, Resume, Stop, Previous, Next, seek és hangerő működik.
+- [ ] Az idő `MM:SS.d` formátumú.
+- [ ] A kijelölt és ténylegesen játszott track állapota nem keveredik.
 
-## Remote és szimuláció
+## Hardware-felderítés
 
-- [ ] Portfrissítés után COM-port választható; nincs automatikus csatlakozás.
-- [ ] A felület `115200 8N1` értéket mutat, korábbi baud rate sehol nem jelenik meg.
-- [ ] Szimuláció nem foglal valódi COM-portot.
-- [ ] START, STOP, PAUSE, PREV és NEXT működik; nyomva tartás csak egy eseményt okoz.
-- [ ] Hibás sor, NACK és timeout után nincs összeomlás; maximum retry után FAULT jelenik meg.
-- [ ] Kapcsolat helyreállásakor trackszám, név, state és timecode újraszinkronizálódik.
-- [ ] Disconnect és alkalmazásbezárás felszabadítja a portot.
+- [ ] A Windows összes COM-portja enumerálva van.
+- [ ] FriendlyName, PNP Device ID és VID/PID rögzítve van, ahol elérhető.
+- [ ] Csak releváns USB-soros jelölteken fut a meglévő `@S`/`@Bxxxxxxxx` handshake.
+- [ ] Port csak érvényes protokollválasz után minősül Tajpán hardware-nek.
+- [ ] A port nincs hardcode-olva az alkalmazásba vagy a tesztbe.
 
-## COM12 hardware smoke teszt
+## Valódi Remote acceptance
 
-- [ ] COM12 megnyitható 115200 8N1 beállítással.
-- [ ] `@S\r\n` kérésre pontos `@Bxxxxxxxx\r\n` válasz érkezik.
-- [ ] A PC `@A\r\n` választ küld az érvényes gombállapotra.
-- [ ] `@N`, `@K`, `@P` és `@T` display parancsokra `@A` érkezik.
-- [ ] Gombnyomások a megfelelő alkalmazásműveletet váltják ki.
+- [ ] Connect után a Remote stabilan Connected.
+- [ ] Polling megközelítőleg 50 Hz; Last RX és RTT normális, Errors nem nő.
+- [ ] PLAY/PAUSE, STOP, PREVIOUS és NEXT fizikai gombél beérkezik.
+- [ ] Track number, track name, playback time és PLAY/PAUSED/STOP LCD-frissítés működik.
+- [ ] Egy új, az adott indítás óta még nem játszott track első indítása nem szakítja meg a Remote-ot.
+- [ ] Pause/Resume, Stop, Previous/Next, seek és volume közben a polling nem áll meg.
+- [ ] Kontrollált disconnect után gyors Disconnected állapot és automatikus reconnect következik.
+- [ ] Reconnect után a display state újraszinkronizálódik, app restart nem kell.

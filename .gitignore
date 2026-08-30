@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# The final end-user release is intentionally versioned at repository root.
+!/build/
+!/build/**
+/build/**/*.pdb
+/build/*.zip

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="TajpanShowController/TajpanShowController.csproj" />
+  <Project Path="TajpanShowController.Core/TajpanShowController.Core.csproj" />
+  <Project Path="TajpanShowController.Infrastructure/TajpanShowController.Infrastructure.csproj" />
+  <Project Path="../tests/TajpanShowController.Tests/TajpanShowController.Tests.csproj" />
+</Solution>

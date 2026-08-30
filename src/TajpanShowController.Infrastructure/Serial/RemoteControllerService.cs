@@ -370,91 +370,6 @@ public sealed class RemoteControllerService : IRemoteControllerService
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
 
-    private async Task PollOnceAsync(
-        ISerialTransport transport,
-        StreamingProtocolParser parser,
-        int generation,
-        TimeSpan responseTimeout,
-        CancellationToken token)
-    {
-        var pollTx = await WriteFrameAsync(transport, ProtocolCodec.Poll(), token, publishImmediately: false).ConfigureAwait(false);
-        var pollSentTimestamp = Stopwatch.GetTimestamp();
-        TimingMetrics.RecordPollSent(pollSentTimestamp);
-        var read = await ReadFrameAsync(transport, parser, ProtocolFrameKind.Buttons, responseTimeout, token).ConfigureAwait(false);
-        var responseFinishedTimestamp = Stopwatch.GetTimestamp();
-        if (!IsCurrentGeneration(generation)) return;
-        if (read?.Selected.Kind == ProtocolFrameKind.Buttons)
-        {
-            var buttons = read.Selected.GetButtons();
-            var changed = !_lastLoggedButtons.HasValue || _lastLoggedButtons.Value != buttons;
-            var hasUnexpectedFrames = read.Frames.Count > 1;
-
-            // Communication health is committed as soon as a valid button frame is parsed.
-            // It must not wait for logging, UI dispatch, or playback triggered by the button.
-            Volatile.Write(ref _lastValidResponseTimestamp, read.ParsedTimestamp);
-            TimingMetrics.RecordValidResponse(read.ParsedTimestamp);
-            LastResponse = read.Selected.Raw;
-            var ackTx = await WriteFrameAsync(transport, ProtocolCodec.Ack(), token, publishImmediately: false).ConfigureAwait(false);
-            var ackSentTimestamp = Stopwatch.GetTimestamp();
-            TimingMetrics.RecordPoll(
-                pollSentTimestamp,
-                read.BytesReceivedTimestamp,
-                read.ParsedTimestamp,
-                ackSentTimestamp,
-                ackSentTimestamp,
-                timedOut: false,
-                responseTimeout);
-            SetConnectionState(RemoteConnectionState.Connected, generation);
-
-            if (changed || hasUnexpectedFrames)
-            {
-                var entries = new List<RemoteDebugLogEntry> { pollTx };
-                AddReceivedFrames(entries, read, $"Buttons={read.Selected.Payload}");
-                if (changed && !_buttonBaselinePending) AddButtonChanges(entries, _lastLoggedButtons ?? default, buttons, read.Timestamp);
-                entries.Add(ackTx);
-                _debugLog.WriteRange(entries);
-            }
-
-            _lastLoggedButtons = buttons;
-            if (_buttonBaselinePending)
-            {
-                _edges.Synchronize(buttons);
-                _buttonBaselinePending = false;
-            }
-            else
-            {
-                foreach (var button in _edges.Update(buttons))
-                    _buttonCommands.Writer.TryWrite(new ButtonCommand(generation, button, read.ParsedTimestamp));
-            }
-            return;
-        }
-
-        var nackTx = await WriteFrameAsync(transport, ProtocolCodec.Nack(), token, publishImmediately: false).ConfigureAwait(false);
-        TimingMetrics.RecordPoll(
-            pollSentTimestamp,
-            read?.BytesReceivedTimestamp ?? 0,
-            read?.ParsedTimestamp ?? 0,
-            0,
-            responseFinishedTimestamp,
-            timedOut: read is null,
-            responseTimeout);
-        var failedEntries = new List<RemoteDebugLogEntry> { pollTx };
-        if (read is null)
-        {
-            failedEntries.Add(new RemoteDebugLogEntry(DateTimeOffset.Now, RemoteDebugLogKind.Warning, "Poll timeout"));
-            LastResponse = "TIMEOUT";
-        }
-        else
-        {
-            AddReceivedFrames(failedEntries, read);
-            failedEntries.Add(new RemoteDebugLogEntry(DateTimeOffset.Now, RemoteDebugLogKind.Warning,
-                $"Unexpected {read.Selected.Kind} response to poll"));
-            LastResponse = read.Selected.Raw;
-        }
-        failedEntries.Add(nackTx);
-        _debugLog.WriteRange(failedEntries);
-    }
-
     private bool TryGetPendingDisplay(out PendingDisplay pending)
     {
         pending = default;
@@ -516,68 +431,6 @@ public sealed class RemoteControllerService : IRemoteControllerService
         var entry = new RemoteDebugLogEntry(DateTimeOffset.Now, RemoteDebugLogKind.Tx, FrameText(data.Span));
         if (publishImmediately) _debugLog.Write(entry);
         return entry;
-    }
-
-    private async Task<FrameReadResult?> ReadFrameAsync(
-        ISerialTransport transport,
-        StreamingProtocolParser parser,
-        ProtocolFrameKind expectedKind,
-        TimeSpan timeout,
-        CancellationToken token)
-    {
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeoutCts.CancelAfter(timeout);
-        var buffer = new byte[256];
-        var firstBytesTimestamp = 0L;
-        try
-        {
-            while (true)
-            {
-                var count = await transport.ReadAsync(buffer, timeoutCts.Token).ConfigureAwait(false);
-                if (count <= 0) continue;
-                if (firstBytesTimestamp == 0) firstBytesTimestamp = Stopwatch.GetTimestamp();
-                var frames = parser.Append(buffer.AsSpan(0, count));
-                if (frames.Count == 0) continue;
-                var parsedTimestamp = Stopwatch.GetTimestamp();
-                var selectedIndex = FindExpectedFrame(frames, expectedKind);
-                if (frames.Any(frame => frame.Kind == expectedKind ||
-                    expectedKind == ProtocolFrameKind.Ack && frame.Kind == ProtocolFrameKind.Nack ||
-                    frame.Kind == ProtocolFrameKind.Unknown))
-                    return new FrameReadResult(frames, selectedIndex, DateTimeOffset.Now, firstBytesTimestamp, parsedTimestamp);
-            }
-        }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
-    }
-
-    private static int FindExpectedFrame(IReadOnlyList<ProtocolFrame> frames, ProtocolFrameKind expectedKind)
-    {
-        for (var i = 0; i < frames.Count; i++)
-            if (frames[i].Kind == expectedKind) return i;
-        if (expectedKind == ProtocolFrameKind.Ack)
-            for (var i = 0; i < frames.Count; i++)
-                if (frames[i].Kind == ProtocolFrameKind.Nack) return i;
-        return 0;
-    }
-
-    private static void AddReceivedFrames(
-        ICollection<RemoteDebugLogEntry> entries,
-        FrameReadResult read,
-        string? selectedDescription = null)
-    {
-        for (var i = 0; i < read.Frames.Count; i++)
-        {
-            var frame = read.Frames[i];
-            if (frame.Kind == ProtocolFrameKind.Unknown)
-            {
-                entries.Add(new RemoteDebugLogEntry(read.Timestamp, RemoteDebugLogKind.Error,
-                    "Invalid frame: " + DisplayRaw(frame.Raw)));
-            }
-            else
-            {
-                entries.Add(new RemoteDebugLogEntry(read.Timestamp, RemoteDebugLogKind.Rx, frame.Raw,
-                    i == read.SelectedIndex ? selectedDescription : $"Unexpected {frame.Kind} frame"));
-            }
-        }
     }
 
     private static void AddButtonChanges(
@@ -650,13 +503,4 @@ public sealed class RemoteControllerService : IRemoteControllerService
         long BytesReceivedTimestamp,
         long ParsedTimestamp);
     private sealed record ButtonCommand(int Generation, RemoteButton Button, long ParsedTimestamp);
-    private sealed record FrameReadResult(
-        IReadOnlyList<ProtocolFrame> Frames,
-        int SelectedIndex,
-        DateTimeOffset Timestamp,
-        long BytesReceivedTimestamp,
-        long ParsedTimestamp)
-    {
-        public ProtocolFrame Selected => Frames[SelectedIndex];
-    }
 }

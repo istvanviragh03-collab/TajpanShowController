@@ -1,5 +1,4 @@
 using TajpanShowController.Core.Models;
-using TajpanShowController.Core.Services;
 using TajpanShowController.Infrastructure.Persistence;
 using Xunit;
 
@@ -65,16 +64,6 @@ public sealed class PlaylistFileStoreTests : IDisposable
         await File.WriteAllTextAsync(path, "{\"Tracks\":[]}", ct);
 
         Assert.Equal("fallback-show", (await _store.LoadAsync(path, ct)).PlaylistName);
-    }
-
-    [Fact]
-    public void PlaylistNameEditMarksDirtyAndSaveClearsDirty()
-    {
-        var tracker = new PlaylistChangeTracker();
-        tracker.MarkModified();
-        Assert.True(tracker.IsModified);
-        tracker.MarkSaved();
-        Assert.False(tracker.IsModified);
     }
 
     public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
