@@ -25,7 +25,7 @@ A mappa fájljait együtt kell tartani; a kiadás szándékosan nem single-file,
 
 A soros beállítás rögzített: **115200 baud, 8N1, ASCII, flow control nélkül**. A PC a busz mastere, a Remote pedig az alkalmazás state-poll kéréseire válaszol. A program nem hardcode-ol COM-portot: a **Refresh** frissíti a Windows által elérhető portokat, az utolsó választás felhasználónként mentésre kerül.
 
-Az **Auto Connect** a mentett porttal próbál csatlakozni induláskor, az **Auto Reconnect** pedig kapcsolatvesztés után újracsatlakozik. A Remote fizikai **PLAY/START**, **PAUSE**, **STOP**, **PREVIOUS** és **NEXT** gombjai a playbacket vezérlik. A track sorszáma, neve, ideje és PLAY/PAUSED/STOP állapota az LCD-re szinkronizálódik.
+Az **Auto Connect** a mentett porttal próbál csatlakozni induláskor, az **Auto Reconnect** pedig kapcsolatvesztés után újracsatlakozik. A Remote négy fizikai kezelőszerve a kombinált **PLAY/PAUSE**, valamint a **STOP**, **PREVIOUS** és **NEXT** gomb; ezek vezérlik a playbacket. A track sorszáma, neve, ideje és PLAY/PAUSED/STOP állapota az LCD-re szinkronizálódik.
 
 A főképernyőn és a Settings oldalon látható a PORT, POLL, LAST RX, ERRORS és RTT diagnosztika. A **Remote Debug** lap a célzott kommunikációs naplót mutatja; ez a felhasználói hibakeresés része.
 
