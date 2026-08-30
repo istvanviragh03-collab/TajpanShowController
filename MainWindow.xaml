@@ -22,7 +22,7 @@
         <Grid Grid.Row="3" Margin="0,11,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Button Content="+ Add files" Click="AddFiles_Click"/><Button Grid.Column="1" Content="Remove" Command="{Binding RemoveCommand}" Margin="5,0,0,0"/><StackPanel Grid.Column="2" Orientation="Horizontal" Margin="14,0"><Button Content="UP" Command="{Binding MoveUpCommand}"/><Button Content="DOWN" Command="{Binding MoveDownCommand}" Margin="5,0,0,0"/></StackPanel><TextBlock Grid.Column="3" Text="Drag to reorder" FontSize="8" Foreground="{DynamicResource VeryMutedBrush}"/></Grid>
       </Grid></Border>
 
-      <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="210"/><RowDefinition Height="10"/><RowDefinition Height="175"/><RowDefinition Height="10"/><RowDefinition Height="72"/><RowDefinition Height="10"/><RowDefinition Height="72"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="210"/><RowDefinition Height="10"/><RowDefinition Height="175"/><RowDefinition Height="10"/><RowDefinition Height="72"/><RowDefinition Height="10"/><RowDefinition Height="142"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Border Style="{StaticResource Card}" Padding="17,15">
           <Grid>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -33,7 +33,7 @@
                     IsEnabled="{Binding IsSeekEnabled}" IsMoveToPointEnabled="False" PreviewMouseLeftButtonDown="SeekSlider_PreviewMouseLeftButtonDown"
                     ToolTip="Kattintással vagy húzással állítható a lejátszási pozíció"/>
             <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0"><Button Content="PREV" Command="{Binding PreviousCommand}" MinWidth="52" Height="38"/><Button Style="{StaticResource PrimaryTransport}" Content="PLAY" Command="{Binding PlayCommand}" Margin="7,0"/><Button Content="PAUSE" Command="{Binding PauseCommand}" MinWidth="54" Height="38"/><Button Content="STOP" Command="{Binding StopCommand}" MinWidth="52" Height="38" Margin="7,0,0,0"/><Button Content="NEXT" Command="{Binding NextCommand}" MinWidth="52" Height="38" Margin="7,0,0,0"/></StackPanel>
-            <Grid Grid.Row="4" Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="55"/><ColumnDefinition/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions><TextBlock Text="Volume" Foreground="{DynamicResource SecondaryBrush}" VerticalAlignment="Center"/><Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="9,0" VerticalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding VolumePercent}" Foreground="{DynamicResource SecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
+            <Grid Grid.Row="4" Margin="0,10,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="55"/><ColumnDefinition/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions><TextBlock Text="Volume" Foreground="{DynamicResource SecondaryBrush}" VerticalAlignment="Center"/><Slider Grid.Column="1" Style="{StaticResource PlaybackSlider}" Minimum="0" Maximum="100" Value="{Binding Volume, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="9,0" VerticalAlignment="Center"/><TextBlock Grid.Column="2" Text="{Binding VolumePercent}" Foreground="{DynamicResource SecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/></Grid>
           </Grid>
         </Border>
         <Border Grid.Row="2" Style="{StaticResource Card}" Padding="13">
@@ -85,7 +85,27 @@
           </Grid>
         </Border>
         <Border Grid.Row="4" Style="{StaticResource Card}" Padding="13"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="70"/><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Style="{StaticResource Caption}" Text="AUDIO"/><TextBlock Grid.Column="1" Text="●" Foreground="{Binding AudioStatusColor}" FontSize="15" Margin="10,0,4,0"/><TextBlock Grid.Column="2" Text="{Binding AudioStatusLabel}" Foreground="{Binding AudioStatusColor}" FontWeight="SemiBold"/><TextBlock Grid.Column="3" Text="{Binding SelectedAudioDevice.Name}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" Margin="22,0,14,0"/><StackPanel Grid.Column="4" Orientation="Horizontal"><TextBlock Text="L" FontSize="9" VerticalAlignment="Center"/><ProgressBar Height="6" Width="90" Maximum="100" Value="0" Background="#283038" Foreground="#DCE1E4" Margin="5,0,14,0" VerticalAlignment="Center"/><TextBlock Text="R" FontSize="9" VerticalAlignment="Center"/><ProgressBar Height="6" Width="90" Maximum="100" Value="0" Background="#283038" Foreground="#DCE1E4" Margin="5,0,0,0" VerticalAlignment="Center"/></StackPanel></Grid></Border>
-        <Border Grid.Row="6" Style="{StaticResource Card}" Padding="13"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="78"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Style="{StaticResource Caption}" Text="REMOTE"/><TextBlock Grid.Column="1" Text="●" Foreground="{Binding RemoteStatusColor}" FontSize="15" Margin="10,0,4,0"/><TextBlock Grid.Column="2" Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" FontWeight="SemiBold"/><TextBlock Grid.Column="3" Text="{Binding ConnectionDetail}" Foreground="{DynamicResource MutedBrush}" Margin="24,0,0,0" TextTrimming="CharacterEllipsis"/><TextBlock Grid.Column="4" Text="{Binding RemoteStatusDetail}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" Margin="15,0,0,0"/></Grid></Border>
+        <Border Grid.Row="6" Style="{StaticResource Card}" Padding="13,11">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="78"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <TextBlock Style="{StaticResource Caption}" Text="REMOTE"/>
+              <TextBlock Grid.Column="1" Text="●" Foreground="{Binding RemoteStatusColor}" FontSize="15" Margin="10,0,4,0"/>
+              <TextBlock Grid.Column="2" Text="{Binding ConnectionLabel}" Foreground="{Binding RemoteStatusColor}" FontWeight="SemiBold"/>
+              <TextBlock Grid.Column="3" Text="{Binding RemoteStatusDetail}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" Margin="18,0,0,0" HorizontalAlignment="Right"/>
+            </Grid>
+            <TextBlock Grid.Row="1" Text="{Binding ConnectionDetail}" Foreground="{DynamicResource VeryMutedBrush}" FontSize="9" Margin="0,5,0,4" TextTrimming="CharacterEllipsis"/>
+            <Grid Grid.Row="2">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <StackPanel Margin="0,0,8,5"><TextBlock Style="{StaticResource Caption}" Text="PORT"/><TextBlock Text="{Binding SelectedPort, TargetNullValue=—, FallbackValue=—}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+              <StackPanel Grid.Column="1" Margin="8,0,0,5"><TextBlock Style="{StaticResource Caption}" Text="POLL"/><TextBlock Text="{Binding RemotePollRate}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+              <StackPanel Grid.Row="1" Margin="0,0,8,0"><TextBlock Style="{StaticResource Caption}" Text="LAST RX"/><TextBlock Text="{Binding RemoteLastRxAge}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,0"><TextBlock Style="{StaticResource Caption}" Text="ERRORS"/><TextBlock Text="{Binding RemoteErrorCount}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+            </Grid>
+          </Grid>
+        </Border>
       </Grid>
     </Grid>
 
